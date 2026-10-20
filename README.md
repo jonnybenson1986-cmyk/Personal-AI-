@@ -8,7 +8,8 @@ A private chat app for **Claude** and **ChatGPT** in one place. You deploy it to
 - Edit a past message to branch the chat, regenerate answers, and stop a reply mid-stream.
 - Chat history is searchable, grouped by date, and stored only on your device in IndexedDB.
 - Installable PWA with offline access to past chats, dark/light themes, and a mobile layout.
-- Your API keys stay on Netlify. The browser never sees them, and a passcode locks the app.
+- A passcode locks the app on your device (default **3280**, changeable in Settings).
+- Paste your API keys into Settings (saved only on your device), or keep them on Netlify behind a server passcode.
 
 ## How it's built
 
@@ -35,18 +36,13 @@ The browser uses the official SDKs pointed at the edge proxy. The proxy only for
 
 ## Deploy to Netlify
 
-1. **Get API keys.** Get an Anthropic key from [console.anthropic.com](https://console.anthropic.com/settings/keys), an OpenAI key from [platform.openai.com](https://platform.openai.com/api-keys), or both. Either one works on its own.
-2. **Create the site.** In Netlify, choose **Add new site → Import an existing project** and pick this GitHub repo. The build settings come from `netlify.toml` (`npm run build`, publish `dist`), so leave them as they are.
-3. **Set environment variables** under **Site configuration → Environment variables**:
+1. In Netlify, choose **Add new site → Import an existing project** and pick this GitHub repo. The build settings come from `netlify.toml`, so leave them as they are.
+2. Deploy, open the site and enter the app passcode: **3280** to start. Change it under Settings → App passcode.
+3. Open **Settings → API keys** and paste an Anthropic key ([console.anthropic.com](https://console.anthropic.com/settings/keys)), an OpenAI key ([platform.openai.com](https://platform.openai.com/api-keys)), or both. They're saved on that device only and passed straight through to Anthropic or OpenAI.
 
-   | Variable | Value |
-   | --- | --- |
-   | `ANTHROPIC_API_KEY` | your Anthropic key |
-   | `OPENAI_API_KEY` | your OpenAI key |
-   | `APP_PASSCODE` | a long passphrase that only you know |
+That's all you need. The app passcode only locks the app on your device. Your keys and chats never leave it, so someone who opens the site elsewhere gets an empty app with no keys.
 
-   `APP_PASSCODE` is required. The API refuses every request without it, because anyone with your site URL and the passcode can spend your API credit.
-4. **Deploy**, or trigger a redeploy after adding the variables. Then open the site and enter your passcode.
+**Optional: keep keys on Netlify instead.** Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `APP_PASSCODE` under **Site configuration → Environment variables**, then redeploy. In the app, enter that passcode under Settings → "Using keys stored on Netlify instead?". The server's keys are only ever used with the correct `APP_PASSCODE`.
 
 ## Install it as an app
 
@@ -61,7 +57,7 @@ The installed app opens in its own window and updates itself. When a new version
 
 ```bash
 npm install
-cp .env.example .env      # fill in your keys and a passcode
+cp .env.example .env      # optional: server-side keys and passcode
 npx netlify-cli dev       # app + edge functions on http://localhost:8888
 ```
 

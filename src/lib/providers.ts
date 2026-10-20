@@ -12,28 +12,37 @@ export interface StreamRequest {
   current: Turn
   model: ModelRef
   effort: Effort
-  passcode: string
+  credentials: Credentials
   signal: AbortSignal
   events: StreamEvents
 }
 
-function anthropicClient(passcode: string) {
-  // The real key is added by the edge proxy; the SDK just needs a placeholder.
+export interface Credentials {
+  passcode: string
+  anthropicKey: string
+  openaiKey: string
+}
+
+// Requests go through the edge proxy. With a key from Settings the SDK sends it and the proxy
+// passes it on; without one, the placeholder asks the proxy to use the server's key.
+const PLACEHOLDER_KEY = "set-on-server"
+
+function anthropicClient(c: Credentials) {
   return new Anthropic({
     baseURL: `${location.origin}/api/anthropic`,
-    apiKey: "set-on-server",
+    apiKey: c.anthropicKey.trim() || PLACEHOLDER_KEY,
     dangerouslyAllowBrowser: true,
-    defaultHeaders: { "x-app-passcode": passcode },
+    defaultHeaders: { "x-app-passcode": c.passcode },
     maxRetries: 1,
   })
 }
 
-function openaiClient(passcode: string) {
+function openaiClient(c: Credentials) {
   return new OpenAI({
     baseURL: `${location.origin}/api/openai/v1`,
-    apiKey: "set-on-server",
+    apiKey: c.openaiKey.trim() || PLACEHOLDER_KEY,
     dangerouslyAllowBrowser: true,
-    defaultHeaders: { "x-app-passcode": passcode },
+    defaultHeaders: { "x-app-passcode": c.passcode },
     maxRetries: 1,
   })
 }
@@ -44,7 +53,7 @@ const FALLBACK_MODELS = new Set(["claude-fable-5-1", "claude-opus-5-5", "claude-
 const DYNAMIC_SEARCH = /^claude-(opus-(5|4-[678])|sonnet-(5|4-6))/
 
 async function streamAnthropic(req: StreamRequest): Promise<StreamResult> {
-  const client = anthropicClient(req.passcode)
+  const client = anthropicClient(req.credentials)
   const model = req.model.id
   const fallback = FALLBACK_MODELS.has(model)
   const stream = client.beta.messages.stream(
@@ -91,7 +100,7 @@ async function streamAnthropic(req: StreamRequest): Promise<StreamResult> {
 const REASONING = /^(gpt-5|gpt-6|o\d)/
 
 async function streamOpenAI(req: StreamRequest): Promise<StreamResult> {
-  const client = openaiClient(req.passcode)
+  const client = openaiClient(req.credentials)
   const model = req.model.id
   const stream = await client.responses.create(
     {
@@ -144,11 +153,11 @@ export function streamReply(req: StreamRequest) {
 }
 
 /** Live model lists from both APIs; either may fail if its key isn't configured. */
-export async function listModels(passcode: string, providers: { anthropic: boolean; openai: boolean }) {
+export async function listModels(credentials: Credentials, providers: Status) {
   const out: ModelInfo[] = []
   const [claude, gpt] = await Promise.allSettled([
-    providers.anthropic ? anthropicClient(passcode).models.list({ limit: 50 }) : Promise.reject(),
-    providers.openai ? openaiClient(passcode).models.list() : Promise.reject(),
+    providers.anthropic ? anthropicClient(credentials).models.list({ limit: 50 }) : Promise.reject(),
+    providers.openai ? openaiClient(credentials).models.list() : Promise.reject(),
   ])
   if (claude.status === "fulfilled")
     for (const m of claude.value.data)
@@ -157,16 +166,33 @@ export async function listModels(passcode: string, providers: { anthropic: boole
   return out
 }
 
+/** Which providers the app can use right now. */
 export interface Status {
   anthropic: boolean
   openai: boolean
 }
 
-export async function checkStatus(passcode: string): Promise<Status> {
-  const res = await fetch("/api/status", { headers: { "x-app-passcode": passcode } })
-  const body = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(body?.error?.message ?? `Server returned ${res.status}`)
-  return body as Status
+export interface ServerStatus extends Status {
+  passcodeSet: boolean
+  unlocked: boolean
+}
+
+export async function serverStatus(passcode: string): Promise<ServerStatus> {
+  try {
+    const res = await fetch("/api/status", { headers: { "x-app-passcode": passcode } })
+    if (res.ok) return (await res.json()) as ServerStatus
+  } catch {
+    // Offline: only keys entered in the app count.
+  }
+  return { anthropic: false, openai: false, passcodeSet: false, unlocked: false }
+}
+
+/** A provider works with a key from Settings, or with the server's key behind its passcode. */
+export function availability(credentials: Credentials, server: ServerStatus): Status {
+  return {
+    anthropic: !!credentials.anthropicKey.trim() || (server.anthropic && server.unlocked),
+    openai: !!credentials.openaiKey.trim() || (server.openai && server.unlocked),
+  }
 }
 
 export function errorMessage(error: unknown) {

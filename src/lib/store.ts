@@ -13,6 +13,8 @@ export const uid = () => crypto.randomUUID()
 
 const defaults: Settings = {
   passcode: "",
+  anthropicKey: "",
+  openaiKey: "",
   system: "",
   effort: "medium",
   webSearch: true,
@@ -206,7 +208,7 @@ async function streamOne(convId: string, turnId: string, model: ModelRef) {
       current: snapshot.turns[index],
       model,
       effort: settings.effort,
-      passcode: settings.passcode,
+      credentials: settings,
       signal: controller.signal,
       events: {
         text: (d) => update((r) => (r.text += d)),

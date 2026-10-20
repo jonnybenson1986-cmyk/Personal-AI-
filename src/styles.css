@@ -1408,3 +1408,66 @@ button:disabled {
     padding: 0 10px max(8px, env(safe-area-inset-bottom));
   }
 }
+
+/* Settings additions */
+
+.section {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+  margin: 20px 0 4px;
+}
+
+.text-input {
+  margin-top: 4px;
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg);
+  padding: 9px 12px;
+  outline: none;
+  min-width: 0;
+}
+
+.text-input:focus {
+  border-color: var(--text-3);
+}
+
+.inline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.inline .button {
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.key-status {
+  color: var(--text-2);
+  margin: 0 0 8px;
+}
+
+.advanced summary {
+  cursor: pointer;
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+
+.setup {
+  width: min(420px, 100%);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.setup h1 {
+  margin: 0;
+}
+
+.setup p {
+  margin: 0 0 8px;
+}

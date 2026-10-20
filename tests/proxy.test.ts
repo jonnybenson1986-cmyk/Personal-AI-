@@ -31,6 +31,31 @@ test("fails closed when no passcode is configured", async () => {
   assert.equal(res.status, 503)
 })
 
+test("a user's own key is forwarded without a server passcode", async () => {
+  const calls = capture()
+  const res = await proxy(
+    new Request("https://x/api/anthropic/v1/messages", { method: "POST", headers: { "x-api-key": "sk-ant-mine" }, body: "{}" }),
+    anthropic,
+    env({}),
+  )
+  assert.equal(res.status, 200)
+  assert.equal(new Headers(calls[0].init.headers).get("x-api-key"), "sk-ant-mine")
+
+  await proxy(new Request("https://x/api/openai/v1/responses", { method: "POST", headers: { authorization: "Bearer sk-mine" }, body: "{}" }), openai, env({}))
+  assert.equal(new Headers(calls[1].init.headers).get("authorization"), "Bearer sk-mine")
+})
+
+test("the placeholder key never unlocks the server's key", async () => {
+  const calls = capture()
+  const res = await proxy(
+    new Request("https://x/api/anthropic/v1/messages", { method: "POST", headers: { "x-api-key": "set-on-server" }, body: "{}" }),
+    anthropic,
+    env(keys),
+  )
+  assert.equal(res.status, 401)
+  assert.equal(calls.length, 0)
+})
+
 test("only forwards allowed paths", async () => {
   const calls = capture()
   const res = await proxy(new Request("https://x/api/anthropic/v1/files", { headers: { "x-app-passcode": "open sesame" } }), anthropic, env(keys))

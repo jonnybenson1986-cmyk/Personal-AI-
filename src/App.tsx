@@ -6,8 +6,8 @@ import { Composer } from "./components/Composer"
 import { ModelPicker } from "./components/ModelPicker"
 import { Sidebar } from "./components/Sidebar"
 import { Thread } from "./components/Thread"
-import { refreshCatalog, setStatus, status } from "./lib/catalog"
-import { checkStatus } from "./lib/providers"
+import { refreshStatus, status } from "./lib/catalog"
+import { checkPin } from "./lib/lock"
 import { activeConversation, loadConversations, loaded, newChat, settings, updateSettings } from "./lib/store"
 
 const SUGGESTIONS = [
@@ -19,7 +19,6 @@ const SUGGESTIONS = [
 
 export function App() {
   const [locked, setLocked] = createSignal(true)
-  const [checking, setChecking] = createSignal(false)
   const [unlockError, setUnlockError] = createSignal<string>()
   const [sidebar, setSidebar] = createSignal(false)
   const [showSettings, setShowSettings] = createSignal(false)
@@ -37,40 +36,21 @@ export function App() {
     else root.dataset.theme = settings.theme
   })
 
-  async function unlock(passcode: string) {
-    setChecking(true)
+  async function unlock(pin: string) {
     setUnlockError(undefined)
-    try {
-      const s = await checkStatus(passcode)
-      updateSettings({ passcode })
-      setStatus(s)
-      setLocked(false)
-      void refreshCatalog(passcode, s)
-    } catch (e) {
-      // Offline: let the app open so past chats can still be read.
-      if (e instanceof TypeError && settings.passcode === passcode && !navigator.onLine) setLocked(false)
-      else setUnlockError((e as Error).message)
-    } finally {
-      setChecking(false)
-    }
+    if (!(await checkPin(pin))) return setUnlockError("Wrong passcode.")
+    setLocked(false)
+    void refreshStatus(settings)
   }
 
-  onMount(() => {
-    void loadConversations()
-    if (settings.passcode) void unlock(settings.passcode)
-  })
+  onMount(() => void loadConversations())
 
-  const noKeys = () => status() && !status()!.anthropic && !status()!.openai
+  const noKeys = () => !!status() && !status()!.anthropic && !status()!.openai
 
   return (
     <Switch>
-      <Match when={locked() && (!settings.passcode || unlockError())}>
-        <Unlock error={unlockError()} busy={checking()} onSubmit={unlock} />
-      </Match>
       <Match when={locked()}>
-        <div class="splash">
-          <img src="/favicon.svg" alt="" width="40" height="40" />
-        </div>
+        <Unlock error={unlockError()} onSubmit={unlock} />
       </Match>
       <Match when={!locked()}>
         <div class="app">
@@ -88,12 +68,25 @@ export function App() {
                 </button>
               </Show>
             </header>
-            <Show when={noKeys()}>
-              <div class="banner">No API keys are set on the server. Add ANTHROPIC_API_KEY and/or OPENAI_API_KEY in Netlify, then redeploy.</div>
-            </Show>
             <Show
               when={activeConversation()}
               fallback={
+                <Show
+                  when={!noKeys()}
+                  fallback={
+                    <div class="welcome">
+                      <div class="setup">
+                        <h1>Add an API key to start</h1>
+                        <p class="muted">
+                          Paste an Anthropic key to chat with Claude, an OpenAI key for ChatGPT, or both. Keys are saved only on this device.
+                        </p>
+                        <button class="button primary wide" onClick={() => setShowSettings(true)}>
+                          Add API keys
+                        </button>
+                      </div>
+                    </div>
+                  }
+                >
                 <div class="welcome">
                   <h1>What's on your mind?</h1>
                   <Composer autofocus draft={draft} onDraftUsed={() => setDraft("")} />
@@ -101,6 +94,7 @@ export function App() {
                     <For each={SUGGESTIONS}>{(s) => <button onClick={() => setDraft(s)}>{s}</button>}</For>
                   </div>
                 </div>
+                </Show>
               }
             >
               {(conv) => (
@@ -120,8 +114,7 @@ export function App() {
           <Show when={showSettings()}>
             <SettingsDialog
               onClose={() => setShowSettings(false)}
-              onSignOut={() => {
-                updateSettings({ passcode: "" })
+              onLock={() => {
                 setShowSettings(false)
                 setLocked(true)
               }}

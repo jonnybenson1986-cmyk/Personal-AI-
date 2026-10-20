@@ -68,7 +68,13 @@ export interface Conversation {
 export type Effort = "low" | "medium" | "high"
 
 export interface Settings {
+  /** Server passcode (APP_PASSCODE); only needed to use keys stored on Netlify. */
   passcode: string
+  /** Keys entered in the app. Stored on this device only. */
+  anthropicKey: string
+  openaiKey: string
+  /** SHA-256 of the app lock passcode; unset means the default. */
+  pinHash?: string
   system: string
   effort: Effort
   webSearch: boolean
