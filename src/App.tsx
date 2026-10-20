@@ -49,6 +49,16 @@ export function App() {
   const noKeys = () => !!status() && !status()!.anthropic && !status()!.openai
 
   return (
+    <>
+    {/* Outside the lock so an update can be applied before unlocking. */}
+    <Show when={needRefresh()}>
+      <div class="toast">
+        A new version is ready.
+        <button class="button primary" onClick={() => void updateServiceWorker(true)}>
+          Reload
+        </button>
+      </div>
+    </Show>
     <Switch>
       <Match when={locked()}>
         <Unlock error={unlockError()} onSubmit={unlock} />
@@ -133,16 +143,9 @@ export function App() {
           <Show when={showInstall()}>
             <InstallHelp onClose={() => setShowInstall(false)} />
           </Show>
-          <Show when={needRefresh()}>
-            <div class="toast">
-              A new version is ready.
-              <button class="button primary" onClick={() => void updateServiceWorker(true)}>
-                Reload
-              </button>
-            </div>
-          </Show>
         </div>
       </Match>
     </Switch>
+    </>
   )
 }
