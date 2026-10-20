@@ -125,7 +125,9 @@ export async function listModels(credentials: Credentials, providers: Status) {
   ])
   if (claude.status === "fulfilled")
     for (const m of claude.value.data)
-      if (!/claude-(3|instant|2)/.test(m.id)) out.push({ provider: "anthropic", id: m.id, label: m.display_name })
+      // Netlify AI Gateway answers with one list covering every provider, without display names.
+      if (m.id.startsWith("claude-") && !/claude-(3|instant|2)/.test(m.id))
+        out.push({ provider: "anthropic", id: m.id, label: m.display_name ?? m.id })
   if (gpt.status === "fulfilled") out.push(...filterOpenAIModels(gpt.value.data))
   return out
 }

@@ -12,6 +12,8 @@ export interface Upstream {
   forward: string[]
   auth: (key: string) => Record<string, string>
   keyEnv: string
+  /** Overrides `origin` for the server's key. Netlify AI Gateway sets it alongside the key. */
+  baseEnv: string
   /** A key the user entered in the app and sent with the request, if any. */
   userKey: (req: Request) => string | undefined
 }
@@ -53,11 +55,13 @@ export async function proxy(req: Request, upstream: Upstream, env: (name: string
   // A user's own key spends only their own credit, so it needs no server passcode.
   // The server's key is only used behind the passcode.
   let key = upstream.userKey(req)
+  let origin = upstream.origin
   if (!key) {
     const denied = await checkPasscode(req, env)
     if (denied) return denied
     key = env(upstream.keyEnv)
     if (!key) return json(503, { error: { message: `No API key: add one in Settings, or set ${upstream.keyEnv} on the server.` } })
+    origin = env(upstream.baseEnv)?.replace(/\/+$/, "") || origin
   }
 
   const url = new URL(req.url)
@@ -70,8 +74,10 @@ export async function proxy(req: Request, upstream: Upstream, env: (name: string
     const value = req.headers.get(name)
     if (value) headers.set(name, value)
   }
+  // Netlify AI Gateway rejects requests without a JSON content type, GETs included.
+  if (origin !== upstream.origin && !headers.has("content-type")) headers.set("content-type", "application/json")
 
-  const res = await fetch(upstream.origin + path + url.search, {
+  const res = await fetch(origin + path + url.search, {
     method: req.method,
     headers,
     body: req.method === "GET" || req.method === "HEAD" ? undefined : await req.arrayBuffer(),
@@ -97,6 +103,7 @@ export const anthropic: Upstream = {
   forward: ["content-type", "accept", "anthropic-version", "anthropic-beta"],
   auth: (key) => ({ "x-api-key": key }),
   keyEnv: "ANTHROPIC_API_KEY",
+  baseEnv: "ANTHROPIC_BASE_URL",
   userKey: (req) => {
     const key = req.headers.get("x-api-key")
     return key && key !== PLACEHOLDER_KEY && key.startsWith("sk-") ? key : undefined
@@ -113,6 +120,7 @@ export const openai: Upstream = {
   forward: ["content-type", "accept"],
   auth: (key) => ({ authorization: `Bearer ${key}` }),
   keyEnv: "OPENAI_API_KEY",
+  baseEnv: "OPENAI_BASE_URL",
   userKey: (req) => {
     const key = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
     return key && key !== PLACEHOLDER_KEY && key.startsWith("sk-") ? key : undefined

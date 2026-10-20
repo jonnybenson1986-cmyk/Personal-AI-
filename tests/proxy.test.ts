@@ -114,3 +114,19 @@ test("OpenAI image and video endpoints are allowed, other paths are not", async 
     assert.equal(calls.length, 0)
   }
 })
+
+test("the server key goes to Netlify AI Gateway when its base URL is set, a user's key never does", async () => {
+  const calls = capture()
+  const gateway = { ...keys, ANTHROPIC_BASE_URL: "https://site.netlify.app/.netlify/ai/", OPENAI_BASE_URL: "https://site.netlify.app/.netlify/ai" }
+  await proxy(new Request("https://x/api/anthropic/v1/messages", { method: "POST", headers: { "x-app-passcode": "open sesame" }, body: "{}" }), anthropic, env(gateway))
+  await proxy(new Request("https://x/api/openai/v1/responses", { method: "POST", headers: { "x-app-passcode": "open sesame" }, body: "{}" }), openai, env(gateway))
+  await proxy(new Request("https://x/api/anthropic/v1/messages", { method: "POST", headers: { "x-api-key": "sk-ant-mine" }, body: "{}" }), anthropic, env(gateway))
+  assert.deepEqual(
+    calls.map((c) => c.url),
+    ["https://site.netlify.app/.netlify/ai/v1/messages", "https://site.netlify.app/.netlify/ai/v1/responses", "https://api.anthropic.com/v1/messages"],
+  )
+
+  // The gateway needs a JSON content type even on GETs, which the SDKs send without one.
+  await proxy(new Request("https://x/api/openai/v1/models", { headers: { "x-app-passcode": "open sesame" } }), openai, env(gateway))
+  assert.equal(new Headers(calls[3].init.headers).get("content-type"), "application/json")
+})
