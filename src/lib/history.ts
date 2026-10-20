@@ -3,13 +3,7 @@
 import type { Attachment, ModelRef, Reply, Turn } from "./types"
 
 function usable(reply: Reply) {
-  return (reply.status === "done" || reply.status === "stopped") && (reply.text.trim() !== "" || reply.raw !== undefined || !!reply.media?.id)
-}
-
-/** How a generated image or video appears in a later request's history. */
-export function replyText(reply: Reply) {
-  if (reply.media?.id) return `[Generated ${reply.media.kind}: "${reply.media.prompt}"]`
-  return reply.text
+  return (reply.status === "done" || reply.status === "stopped") && (reply.text.trim() !== "" || reply.raw !== undefined)
 }
 
 /**
@@ -77,7 +71,7 @@ export function anthropicMessages(history: Turn[], current: Turn, target: ModelR
     if (!reply) continue
     // Claude's own blocks go back unchanged so its earlier thinking stays valid.
     if (reply.model.provider === "anthropic" && reply.raw) push("assistant", reply.raw as AnthropicBlock[])
-    else push("assistant", [{ type: "text", text: replyText(reply) }])
+    else push("assistant", [{ type: "text", text: reply.text }])
   }
   push("user", anthropicUser(current))
   return out
@@ -103,7 +97,7 @@ export function openaiInput(history: Turn[], current: Turn, target: ModelRef): O
   for (const turn of history) {
     out.push(openaiUser(turn))
     const reply = pickReply(turn, target)
-    if (reply && replyText(reply).trim()) out.push({ role: "assistant", content: replyText(reply) })
+    if (reply && reply.text.trim()) out.push({ role: "assistant", content: reply.text })
   }
   out.push(openaiUser(current))
   return out

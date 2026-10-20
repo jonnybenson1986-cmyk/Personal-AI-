@@ -88,13 +88,3 @@ test("OpenAI history uses plain text for every reply", () => {
     { role: "user", content: [{ type: "input_text", text: "two" }] },
   ])
 })
-
-test("generated images appear in later history as a short description", () => {
-  const image = reply({ provider: "openai", id: "gpt-image-2" }, "", { media: { kind: "image", prompt: "a red fox", id: "m1" } })
-  const history = [turn("a red fox", [image])]
-  assert.deepEqual(anthropicMessages(history, turn("make it blue"), claude)[1], {
-    role: "assistant",
-    content: [{ type: "text", text: '[Generated image: "a red fox"]' }],
-  })
-  assert.deepEqual(openaiInput(history, turn("make it blue"), gpt)[1], { role: "assistant", content: '[Generated image: "a red fox"]' })
-})

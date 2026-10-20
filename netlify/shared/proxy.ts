@@ -14,7 +14,7 @@ export interface Upstream {
   keyEnv: string
 }
 
-const RESPONSE_HEADERS = ["content-type", "content-disposition", "request-id", "x-request-id", "retry-after", "cache-control"]
+const RESPONSE_HEADERS = ["content-type", "request-id", "x-request-id", "retry-after", "cache-control"]
 
 export function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -89,8 +89,8 @@ export const openai: Upstream = {
   prefix: "/api/openai",
   origin: "https://api.openai.com",
   allow: {
-    GET: [/^\/v1\/models(\/[\w.:-]+)?$/, /^\/v1\/videos\/[\w-]+(\/content)?$/],
-    POST: [/^\/v1\/responses$/, /^\/v1\/images\/(generations|edits)$/, /^\/v1\/videos$/],
+    GET: [/^\/v1\/models(\/[\w.:-]+)?$/],
+    POST: [/^\/v1\/responses$/],
   },
   forward: ["content-type", "accept"],
   auth: (key) => ({ authorization: `Bearer ${key}` }),
