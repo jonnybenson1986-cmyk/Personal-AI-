@@ -2,9 +2,12 @@
 // conversation into its API's request and normalizes the stream into StreamEvents.
 import Anthropic from "@anthropic-ai/sdk"
 import OpenAI from "openai"
+import { anthropicClient, claudeWebSearch, type Credentials, FALLBACK_MODELS, openaiClient, openaiReasons } from "./clients"
 import { anthropicMessages, openaiInput } from "./history"
 import { filterOpenAIModels } from "./models"
 import type { Conversation, Effort, ModelInfo, ModelRef, StreamEvents, StreamResult, Turn } from "./types"
+
+export type { Credentials }
 
 export interface StreamRequest {
   conversation: Conversation
@@ -16,41 +19,6 @@ export interface StreamRequest {
   signal: AbortSignal
   events: StreamEvents
 }
-
-export interface Credentials {
-  passcode: string
-  anthropicKey: string
-  openaiKey: string
-}
-
-// Requests go through the edge proxy. With a key from Settings the SDK sends it and the proxy
-// passes it on; without one, the placeholder asks the proxy to use the server's key.
-const PLACEHOLDER_KEY = "set-on-server"
-
-function anthropicClient(c: Credentials) {
-  return new Anthropic({
-    baseURL: `${location.origin}/api/anthropic`,
-    apiKey: c.anthropicKey.trim() || PLACEHOLDER_KEY,
-    dangerouslyAllowBrowser: true,
-    defaultHeaders: { "x-app-passcode": c.passcode },
-    maxRetries: 1,
-  })
-}
-
-function openaiClient(c: Credentials) {
-  return new OpenAI({
-    baseURL: `${location.origin}/api/openai/v1`,
-    apiKey: c.openaiKey.trim() || PLACEHOLDER_KEY,
-    dangerouslyAllowBrowser: true,
-    defaultHeaders: { "x-app-passcode": c.passcode },
-    maxRetries: 1,
-  })
-}
-
-// Models that accept server-side refusal fallbacks ("default" routes by refusal category).
-const FALLBACK_MODELS = new Set(["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"])
-// Models that take the dynamic-filtering web search tool; others use the basic one.
-const DYNAMIC_SEARCH = /^claude-(opus-(5|4-[678])|sonnet-(5|4-6))/
 
 async function streamAnthropic(req: StreamRequest): Promise<StreamResult> {
   const client = anthropicClient(req.credentials)
@@ -66,9 +34,7 @@ async function streamAnthropic(req: StreamRequest): Promise<StreamResult> {
       // thinking block can no longer be verified (for example after switching models).
       thinking: { type: "adaptive", display: "summarized", block_binding: { prefix_mismatch_behavior: "drop_block" } },
       output_config: { effort: req.effort },
-      tools: req.conversation.webSearch
-        ? [DYNAMIC_SEARCH.test(model) ? { type: "web_search_20260209", name: "web_search" } : { type: "web_search_20250305", name: "web_search" }]
-        : undefined,
+      tools: req.conversation.webSearch ? [claudeWebSearch(model)] : undefined,
       betas: ["thinking-binding-controls-2026-08-01", ...(fallback ? ["server-side-fallback-2026-07-01"] : [])],
       ...(fallback ? { fallbacks: "default" as const } : {}),
     },
@@ -97,8 +63,6 @@ async function streamAnthropic(req: StreamRequest): Promise<StreamResult> {
   return { raw: message.content }
 }
 
-const REASONING = /^(gpt-5|gpt-6|o\d)/
-
 async function streamOpenAI(req: StreamRequest): Promise<StreamResult> {
   const client = openaiClient(req.credentials)
   const model = req.model.id
@@ -110,7 +74,7 @@ async function streamOpenAI(req: StreamRequest): Promise<StreamResult> {
       store: false,
       stream: true,
       tools: req.conversation.webSearch ? [{ type: "web_search" }] : undefined,
-      reasoning: REASONING.test(model) && !model.includes("chat") ? { effort: req.effort } : undefined,
+      reasoning: openaiReasons(model) ? { effort: req.effort } : undefined,
     },
     { signal: req.signal },
   )

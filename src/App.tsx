@@ -2,7 +2,8 @@ import { createEffect, createSignal, For, Match, onMount, Show, Switch } from "s
 import { useRegisterSW } from "virtual:pwa-register/solid"
 import { InstallHelp, SettingsDialog, Unlock } from "./components/Dialogs"
 import { IconCompose, IconMenu } from "./components/icons"
-import { Composer } from "./components/Composer"
+import { Canvas } from "./components/Canvas"
+import { Composer, type Draft } from "./components/Composer"
 import { ModelPicker } from "./components/ModelPicker"
 import { Sidebar } from "./components/Sidebar"
 import { Thread } from "./components/Thread"
@@ -10,11 +11,11 @@ import { refreshStatus, status } from "./lib/catalog"
 import { checkPin } from "./lib/lock"
 import { activeConversation, loadConversations, loaded, newChat, settings, updateSettings } from "./lib/store"
 
-const SUGGESTIONS = [
-  "Explain a tricky concept simply",
-  "Help me write a polite but firm email",
-  "Plan a 3-day trip to Lisbon",
-  "Review this code for bugs",
+const SUGGESTIONS: Draft[] = [
+  { text: "Explain a tricky concept simply" },
+  { text: "Build a single-page HTML to-do app" },
+  { text: "A cozy cabin in snowy woods at dusk, warm light in the windows", mode: "image" },
+  { text: "Waves rolling onto a beach at sunrise, slow aerial shot", mode: "video" },
 ]
 
 export function App() {
@@ -23,7 +24,7 @@ export function App() {
   const [sidebar, setSidebar] = createSignal(false)
   const [showSettings, setShowSettings] = createSignal(false)
   const [showInstall, setShowInstall] = createSignal(false)
-  const [draft, setDraft] = createSignal("")
+  const [draft, setDraft] = createSignal<Draft>()
 
   const {
     needRefresh: [needRefresh],
@@ -89,9 +90,17 @@ export function App() {
                 >
                 <div class="welcome">
                   <h1>What's on your mind?</h1>
-                  <Composer autofocus draft={draft} onDraftUsed={() => setDraft("")} />
+                  <Composer autofocus draft={draft} onDraftUsed={() => setDraft(undefined)} />
                   <div class="suggestions">
-                    <For each={SUGGESTIONS}>{(s) => <button onClick={() => setDraft(s)}>{s}</button>}</For>
+                    <For each={SUGGESTIONS}>
+                      {(s) => (
+                        <button onClick={() => setDraft({ ...s })}>
+                          {s.mode === "image" ? "🖼️ " : s.mode === "video" ? "🎬 " : ""}
+                          {s.mode ? `Create ${s.mode}: ` : ""}
+                          {s.text}
+                        </button>
+                      )}
+                    </For>
                   </div>
                 </div>
                 </Show>
@@ -111,6 +120,7 @@ export function App() {
               <div class="loading-bar" />
             </Show>
           </main>
+          <Canvas />
           <Show when={showSettings()}>
             <SettingsDialog
               onClose={() => setShowSettings(false)}

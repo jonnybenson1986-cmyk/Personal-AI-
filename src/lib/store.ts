@@ -2,8 +2,9 @@ import { createStore, produce, reconcile } from "solid-js/store"
 import { createSignal } from "solid-js"
 import { del, get, set } from "idb-keyval"
 import { DEFAULT_SELECTION } from "./models"
+import { deleteMedia, generateImage, generateVideo, saveMedia } from "./media"
 import { errorMessage, isAbort, streamReply } from "./providers"
-import type { Attachment, Conversation, ModelRef, Reply, Settings, Turn } from "./types"
+import type { Attachment, Conversation, ModelRef, Reply, Settings, Turn, TurnMode } from "./types"
 
 const SETTINGS_KEY = "personal-ai:settings"
 const INDEX_KEY = "conversations"
@@ -20,6 +21,10 @@ const defaults: Settings = {
   webSearch: true,
   theme: "system",
   models: DEFAULT_SELECTION,
+  imageModel: "gpt-image-2",
+  videoModel: "sora-2",
+  shape: "square",
+  videoSeconds: "8",
 }
 
 function loadSettings(): Settings {
@@ -94,6 +99,8 @@ export function newChat() {
 
 export async function deleteConversation(id: string) {
   controllers.get(id)?.forEach((c) => c.abort())
+  for (const turn of conversations.find((c) => c.id === id)?.turns ?? [])
+    for (const reply of turn.replies) if (reply.media?.id) void deleteMedia(reply.media.id)
   setConversations(reconcile(conversations.filter((c) => c.id !== id)))
   if (activeId() === id) setActiveId(undefined)
   persistIndex()
@@ -124,8 +131,11 @@ function titleFrom(text: string, attachments: Attachment[]) {
   return line.length > 48 ? line.slice(0, 47).trimEnd() + "…" : line
 }
 
+/** Previews of images still being drawn, by reply id. Not persisted. */
+export const [previews, setPreviews] = createStore<Record<string, string>>({})
+
 /** Sends a message: starts a chat if needed, then streams one reply per selected model. */
-export function send(text: string, attachments: Attachment[]) {
+export function send(text: string, attachments: Attachment[], mode: TurnMode = "chat") {
   let id = activeId()
   if (!id) {
     const now = Date.now()
@@ -144,7 +154,7 @@ export function send(text: string, attachments: Attachment[]) {
     persistIndex()
     id = conv.id
   }
-  const turn: Turn = { id: uid(), text, attachments, replies: [], createdAt: Date.now() }
+  const turn: Turn = { id: uid(), mode, text, attachments, replies: [], createdAt: Date.now() }
   mutate(id, (c) => {
     c.models = settings.models.map((m) => ({ ...m }))
     c.turns.push(turn)
@@ -180,23 +190,97 @@ export function regenerate(convId: string) {
 
 function answer(convId: string, turnId: string) {
   const conv = conversations.find((c) => c.id === convId)!
+  const turn = conv.turns.find((t) => t.id === turnId)!
+  if (turn.mode === "image" || turn.mode === "video") return void createMedia(convId, turnId, turn.mode)
   for (const model of conv.models) void streamOne(convId, turnId, model)
 }
 
-async function streamOne(convId: string, turnId: string, model: ModelRef) {
-  const replyId = uid()
-  const reply: Reply = { id: replyId, model: { ...model }, text: "", thinking: "", sources: [], status: "streaming", createdAt: Date.now() }
-  mutate(convId, (c) => c.turns.find((t) => t.id === turnId)?.replies.push(reply))
-
-  const update = (fn: (r: Reply) => void) =>
-    mutate(convId, (c) => {
-      const r = c.turns.find((t) => t.id === turnId)?.replies.find((x) => x.id === replyId)
-      if (r) fn(r)
-    })
-
+function track(convId: string) {
   const controller = new AbortController()
   if (!controllers.has(convId)) controllers.set(convId, new Set())
   controllers.get(convId)!.add(controller)
+  return { controller, done: () => controllers.get(convId)?.delete(controller) }
+}
+
+function addReply(convId: string, turnId: string, reply: Reply) {
+  mutate(convId, (c) => c.turns.find((t) => t.id === turnId)?.replies.push(reply))
+  return (fn: (r: Reply) => void) =>
+    mutate(convId, (c) => {
+      const r = c.turns.find((t) => t.id === turnId)?.replies.find((x) => x.id === reply.id)
+      if (r) fn(r)
+    })
+}
+
+/** Image and video turns go straight to OpenAI's image or video model. */
+async function createMedia(convId: string, turnId: string, kind: "image" | "video") {
+  const turn = conversations.find((c) => c.id === convId)!.turns.find((t) => t.id === turnId)!
+  const prompt = turn.text
+  const images = turn.attachments.filter((a) => a.mediaType.startsWith("image/"))
+  const model = { provider: "openai" as const, id: kind === "image" ? settings.imageModel : settings.videoModel }
+  const reply: Reply = { id: uid(), model, text: "", thinking: "", sources: [], status: "streaming", media: { kind, prompt }, createdAt: Date.now() }
+  const update = addReply(convId, turnId, reply)
+  const { controller, done } = track(convId)
+  update((r) => (r.activity = kind === "image" ? "Creating image" : "Starting video"))
+  try {
+    const blob =
+      kind === "image"
+        ? await generateImage({
+            credentials: settings,
+            model: model.id,
+            prompt,
+            shape: settings.shape,
+            references: images,
+            signal: controller.signal,
+            onPartial: (b) => {
+              const old = previews[reply.id]
+              setPreviews(reply.id, URL.createObjectURL(b))
+              if (old) URL.revokeObjectURL(old)
+            },
+          })
+        : await generateVideo({
+            credentials: settings,
+            model: model.id,
+            prompt,
+            shape: settings.shape,
+            seconds: settings.videoSeconds,
+            reference: images[0],
+            signal: controller.signal,
+            onProgress: (progress, status) =>
+              update((r) => {
+                r.media!.progress = progress
+                r.activity = status === "downloading" ? "Downloading video" : status === "queued" ? "Waiting in queue" : "Rendering video"
+              }),
+          })
+    const mediaId = `media-${reply.id}`
+    await saveMedia(mediaId, blob)
+    update((r) => {
+      r.status = "done"
+      r.activity = undefined
+      r.media!.id = mediaId
+    })
+  } catch (error) {
+    update((r) => {
+      r.activity = undefined
+      if (isAbort(error)) r.status = "stopped"
+      else {
+        r.status = "error"
+        r.error = errorMessage(error)
+      }
+    })
+  } finally {
+    done()
+    const preview = previews[reply.id]
+    if (preview) {
+      URL.revokeObjectURL(preview)
+      setPreviews(reply.id, undefined!)
+    }
+  }
+}
+
+async function streamOne(convId: string, turnId: string, model: ModelRef) {
+  const reply: Reply = { id: uid(), model: { ...model }, text: "", thinking: "", sources: [], status: "streaming", createdAt: Date.now() }
+  const update = addReply(convId, turnId, reply)
+  const { controller, done } = track(convId)
 
   const snapshot = JSON.parse(JSON.stringify(conversations.find((c) => c.id === convId))) as Conversation
   const index = snapshot.turns.findIndex((t) => t.id === turnId)
@@ -233,6 +317,6 @@ async function streamOne(convId: string, turnId: string, model: ModelRef) {
       }
     })
   } finally {
-    controllers.get(convId)?.delete(controller)
+    done()
   }
 }
