@@ -25,6 +25,17 @@ export interface Source {
 
 export type ReplyStatus = "streaming" | "done" | "stopped" | "error"
 
+export type TurnMode = "chat" | "image" | "video"
+
+export interface MediaResult {
+  kind: "image" | "video"
+  prompt: string
+  /** Key in the media store once the image or video is ready. */
+  id?: string
+  /** Video render progress, 0-100. */
+  progress?: number
+}
+
 export interface Reply {
   id: string
   model: ModelRef
@@ -41,11 +52,14 @@ export interface Reply {
    * reasoning; only complete responses keep them.
    */
   raw?: unknown[]
+  media?: MediaResult
   createdAt: number
 }
 
 export interface Turn {
   id: string
+  /** Missing on chats saved before image and video modes existed. */
+  mode?: TurnMode
   text: string
   attachments: Attachment[]
   replies: Reply[]
@@ -74,6 +88,10 @@ export interface Settings {
   webSearch: boolean
   theme: "system" | "light" | "dark"
   models: ModelRef[]
+  imageModel: string
+  videoModel: string
+  shape: "square" | "portrait" | "landscape"
+  videoSeconds: "4" | "8" | "12"
 }
 
 export interface StreamEvents {
