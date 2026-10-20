@@ -42,7 +42,13 @@ The browser uses the official SDKs pointed at the edge proxy. The proxy only for
 
 That's all you need. The app passcode only locks the app on your device. Your keys and chats never leave it, so someone who opens the site elsewhere gets an empty app with no keys.
 
-**Optional: keep keys on Netlify instead.** Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `APP_PASSCODE` under **Site configuration → Environment variables**, then redeploy. In the app, enter that passcode under Settings → "Using keys stored on Netlify instead?". The server's keys are only ever used with the correct `APP_PASSCODE`.
+**Optional: use Netlify's keys instead of your own.** Netlify AI Gateway gives every site Claude and ChatGPT access billed to your Netlify credits, so you don't need any API keys. Turn it on with one variable:
+
+1. In Netlify, open **Project configuration → Environment variables → Add a variable** and add `APP_PASSCODE` with a long passphrase of your own. Anyone who knows it can spend your credits through the site.
+2. Redeploy (**Deploys → Trigger deploy**).
+3. In the app, open Settings → "Using keys stored on Netlify instead?" and enter that passcode.
+
+If you also set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` on Netlify, those keys are used for that provider instead of the gateway. The server's keys only work with the correct `APP_PASSCODE`. Keys entered in Settings always go straight to Anthropic or OpenAI. Through the gateway, Sora video and GPT Image 1 mini aren't available. Use your own OpenAI key for those.
 
 ## Install it as an app
 
