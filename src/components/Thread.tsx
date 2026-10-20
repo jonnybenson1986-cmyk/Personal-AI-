@@ -1,11 +1,13 @@
-import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createResource, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
+import { download, setCanvas } from "../lib/canvas"
 import { catalog } from "../lib/catalog"
 import { isImage } from "../lib/history"
-import { renderMarkdown } from "../lib/markdown"
+import { fileExtension, renderMarkdown } from "../lib/markdown"
+import { loadMedia, mediaUrl } from "../lib/media"
 import { modelLabel } from "../lib/models"
-import { editAndResend, isStreaming, regenerate } from "../lib/store"
+import { editAndResend, isStreaming, previews, regenerate } from "../lib/store"
 import type { Conversation, Reply, Turn } from "../lib/types"
-import { IconCheck, IconCopy, IconEdit, IconFile, IconRefresh } from "./icons"
+import { IconCheck, IconCopy, IconDownload, IconEdit, IconFile, IconRefresh } from "./icons"
 
 function CopyButton(props: { text: () => string; label?: string }) {
   const [done, setDone] = createSignal(false)
@@ -48,6 +50,46 @@ function Markdown(props: { text: string }) {
   return <div class="markdown" innerHTML={html()} />
 }
 
+/** A generated image or video, or its live preview / render progress while it's being made. */
+function MediaView(props: { reply: Reply }) {
+  const media = () => props.reply.media!
+  const [url] = createResource(() => media().id, mediaUrl)
+  const save = async () => {
+    const blob = await loadMedia(media().id!)
+    if (blob) download(`${media().prompt.slice(0, 40).replace(/[^\w-]+/g, "-").toLowerCase() || media().kind}.${media().kind === "image" ? "png" : "mp4"}`, blob)
+  }
+  return (
+    <div class={`media ${media().kind}`}>
+      <Show
+        when={url()}
+        fallback={
+          <Show when={props.reply.status === "streaming"}>
+            <div class="media-pending">
+              <Show when={previews[props.reply.id]} fallback={<div class="media-placeholder shimmer-bg" />}>
+                <img src={previews[props.reply.id]} alt="Preview" class="blurred" />
+              </Show>
+              <Show when={media().kind === "video" && media().progress !== undefined}>
+                <div class="progress">
+                  <div style={{ width: `${Math.max(4, media().progress ?? 0)}%` }} />
+                </div>
+              </Show>
+            </div>
+          </Show>
+        }
+      >
+        <Show when={media().kind === "image"} fallback={<video src={url()} controls playsinline loop />}>
+          <a href={url()} target="_blank" rel="noopener">
+            <img src={url()} alt={media().prompt} />
+          </a>
+        </Show>
+        <button class="button ghost media-save" onClick={save}>
+          <IconDownload /> Download
+        </button>
+      </Show>
+    </div>
+  )
+}
+
 function ReplyView(props: { reply: Reply; last: boolean; convId: string; compare: boolean }) {
   const r = () => props.reply
   const [showThinking, setShowThinking] = createSignal(false)
@@ -72,12 +114,15 @@ function ReplyView(props: { reply: Reply; last: boolean; convId: string; compare
       <Show when={r().activity}>
         <div class="activity shimmer">{r().activity}…</div>
       </Show>
-      <Show when={r().status === "streaming" && !r().text && !r().thinking && !r().activity}>
+      <Show when={r().status === "streaming" && !r().text && !r().thinking && !r().activity && !r().media}>
         <div class="typing" aria-label="Waiting for response">
           <span />
           <span />
           <span />
         </div>
+      </Show>
+      <Show when={r().media}>
+        <MediaView reply={r()} />
       </Show>
       <Show when={r().text}>
         <Markdown text={r().text} />
@@ -226,12 +271,19 @@ export function Thread(props: { conv: Conversation }) {
       ref={scroller}
       onScroll={() => (pinned = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80)}
       onClick={async (e) => {
-        const button = (e.target as HTMLElement).closest(".copy-code") as HTMLButtonElement | null
+        const button = (e.target as HTMLElement).closest(".code-action") as HTMLButtonElement | null
         if (!button) return
-        const code = button.closest(".code")?.querySelector("code")?.textContent ?? ""
-        await navigator.clipboard.writeText(code)
-        button.textContent = "Copied"
-        setTimeout(() => (button.textContent = "Copy"), 1500)
+        const block = button.closest(".code") as HTMLElement
+        const code = block.querySelector("code")?.textContent ?? ""
+        const lang = block.dataset.lang ?? ""
+        const action = button.dataset.action
+        if (action === "preview") setCanvas({ title: props.conv.title, lang, code })
+        if (action === "download") download(`code.${fileExtension(lang)}`, code)
+        if (action === "copy") {
+          await navigator.clipboard.writeText(code)
+          button.textContent = "Copied"
+          setTimeout(() => (button.textContent = "Copy"), 1500)
+        }
       }}
     >
       <div class="thread-inner" ref={inner}>

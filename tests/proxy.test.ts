@@ -92,3 +92,25 @@ test("OpenAI uses a bearer token and keeps the query string", async () => {
   assert.equal(calls[0].url, "https://api.openai.com/v1/models?limit=5")
   assert.equal(new Headers(calls[0].init.headers).get("authorization"), "Bearer sk-real")
 })
+
+test("OpenAI image and video endpoints are allowed, other paths are not", async () => {
+  const allowed = [
+    ["POST", "/v1/images/generations"],
+    ["POST", "/v1/images/edits"],
+    ["POST", "/v1/videos"],
+    ["GET", "/v1/videos/video_123"],
+    ["GET", "/v1/videos/video_123/content"],
+  ]
+  for (const [method, path] of allowed) {
+    const calls = capture()
+    const res = await proxy(new Request(`https://x/api/openai${path}`, { method, headers: { "x-app-passcode": "open sesame" }, body: method === "POST" ? "{}" : undefined }), openai, env(keys))
+    assert.equal(res.status, 200, path)
+    assert.equal(calls.length, 1)
+  }
+  for (const [method, path] of [["DELETE", "/v1/videos/video_123"], ["GET", "/v1/files"], ["POST", "/v1/videos/video_123/remix"]]) {
+    const calls = capture()
+    const res = await proxy(new Request(`https://x/api/openai${path}`, { method, headers: { "x-app-passcode": "open sesame" } }), openai, env(keys))
+    assert.equal(res.status, 404, path)
+    assert.equal(calls.length, 0)
+  }
+})
