@@ -1,5 +1,6 @@
 // Builds the chat-completions message list from a conversation. Kept free of SDK and DOM
 // code so it can be unit tested.
+import { findTool } from "./tools.ts"
 import type { Attachment, ModelRef, Reply, Turn } from "./types"
 
 function usable(reply: Reply) {
@@ -21,10 +22,11 @@ export function isImage(a: Attachment) {
   return a.mediaType.startsWith("image/")
 }
 
-/** Text files are inlined into the prompt. */
+/** Text files are inlined into the prompt, after the AI tool's instruction if one was picked. */
 export function promptText(turn: Turn) {
   const files = turn.attachments.filter((a) => !isImage(a)).map((a) => `<file name="${a.name}">\n${decodeText(a.data)}\n</file>`)
-  return [...files, turn.text].filter((part) => part.trim() !== "").join("\n\n")
+  const instruction = findTool(turn.tool)?.instruction ?? ""
+  return [instruction, ...files, turn.text].filter((part) => part.trim() !== "").join("\n\n")
 }
 
 type Part = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }

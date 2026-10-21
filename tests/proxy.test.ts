@@ -29,7 +29,7 @@ test("a user's own key is passed through for any model", async () => {
   assert.equal(calls[0].url, "https://openrouter.ai/api/v1/chat/completions")
   const headers = new Headers(calls[0].init.headers)
   assert.equal(headers.get("authorization"), "Bearer sk-or-mine")
-  assert.equal(headers.get("x-openrouter-title"), "Personal AI")
+  assert.equal(headers.get("x-openrouter-title"), "Jonny's AI project")
   assert.equal(headers.get("http-referer"), "https://site.app")
   assert.equal(res.headers.get("content-encoding"), null)
   assert.equal(res.headers.get("set-cookie"), null)
@@ -56,16 +56,6 @@ test("without any key the user is asked to add one", async () => {
   const res = await proxy(chat({ model: "openrouter/free" }), openrouter, env({}))
   assert.equal(res.status, 401)
   assert.equal(calls.length, 0)
-})
-
-test("an optional server passcode guards the site's key", async () => {
-  const calls = capture()
-  const vars = { ...server, APP_PASSCODE: "open sesame" }
-  assert.equal((await proxy(chat({ model: "openrouter/free" }), openrouter, env(vars))).status, 401)
-  assert.equal((await proxy(chat({ model: "openrouter/free" }, { "x-app-passcode": "open sesame" }), openrouter, env(vars))).status, 200)
-  // A user's own key doesn't need it.
-  assert.equal((await proxy(chat({ model: "openrouter/free" }, { authorization: "Bearer sk-or-mine" }), openrouter, env(vars))).status, 200)
-  assert.equal(calls.length, 2)
 })
 
 test("the model list needs no key; other paths are blocked", async () => {

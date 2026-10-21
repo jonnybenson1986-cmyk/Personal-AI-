@@ -46,7 +46,7 @@ export function Sidebar(props: { open: boolean; onClose: () => void; onSettings:
         <div class="sidebar-top">
           <div class="brand">
             <img src="/favicon.svg" alt="" width="22" height="22" />
-            Personal AI
+            Jonny's AI project
           </div>
           <button
             class="icon-button"

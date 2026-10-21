@@ -5,6 +5,7 @@ import { isImage } from "../lib/history"
 import { fileExtension, renderMarkdown } from "../lib/markdown"
 import { modelLabel } from "../lib/models"
 import { editAndResend, isStreaming, regenerate } from "../lib/store"
+import { findTool } from "../lib/tools"
 import type { Conversation, Reply, Turn } from "../lib/types"
 import { IconCheck, IconCopy, IconEdit, IconFile, IconRefresh } from "./icons"
 
@@ -125,6 +126,9 @@ function TurnView(props: { turn: Turn; last: boolean; conv: Conversation }) {
                     )}
                   </For>
                 </div>
+              </Show>
+              <Show when={findTool(props.turn.tool)}>
+                {(t) => <span class="tool-tag">{t().label}</span>}
               </Show>
               <Show when={props.turn.text}>
                 <div class="bubble">{props.turn.text}</div>

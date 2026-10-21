@@ -1,26 +1,30 @@
-# Personal AI
+# Jonny's AI project
 
-A private AI chat app that runs on **free open models** (Google Gemma, NVIDIA Nemotron, MiniMax and more) through [OpenRouter](https://openrouter.ai). Deploy it to Netlify and install it on your phone or computer.
+A personal AI chat, coding and research app that runs on **free open models** (Google Gemma, NVIDIA Nemotron, MiniMax and more) through [OpenRouter](https://openrouter.ai). Deploy it to Netlify and install it on your phone or computer.
 
 - **Auto (free)** picks an available free model for each message, or you can choose a specific one. The model list is live, so new free models appear on their own.
 - **Compare side by side:** send one message to two models at once.
-- Streaming answers, the model's thought process where it shares one, image and text-file attachments, Markdown and code highlighting.
+- **The + menu** adds context and tools to a message:
+  - **Photos & files** or **Take a photo**: images and text files.
+  - **GitHub repo**: connect any repo, browse its files, and add the ones you want, plus an outline of the whole project. Private repos work with an optional GitHub token in Settings.
+  - **Web page**: paste a link and the page's text is added for the AI to read.
+  - **AI tools**: Think longer, Write code, Summarize, Translate, Explain simply, Brainstorm, Improve writing.
+- Streaming answers, the model's thought process where it shares one, Markdown and code highlighting.
 - **Code canvas:** preview HTML/SVG the AI writes, then copy or download it.
 - Edit a past message, regenerate an answer, or stop a reply mid-stream.
 - Chat history is searchable, grouped by date, and stored only on your device.
 - Installable app with offline access to past chats, dark/light themes, and a mobile layout.
-- A passcode locks the app on your device (default **3280**, changeable in Settings).
 
 ## Getting started
 
 The app needs a free OpenRouter key. No card or payment is required.
 
 1. Sign up at [openrouter.ai](https://openrouter.ai), open **Settings → API Keys**, and create a key.
-2. Open the app, enter passcode **3280**, then paste the key under **Settings → OpenRouter key**.
+2. Open the app and paste the key under **Settings → OpenRouter key**.
 
 The key is saved only on your device.
 
-**Optional: put the key on Netlify instead,** so the app works on every device without pasting it. Add `OPENROUTER_API_KEY` under **Site configuration → Environment variables**, then redeploy. The site's key only ever reaches free models, because the proxy blocks paid models and paid plugins, so it can't cost you money. To stop strangers using up its free daily quota, also set `APP_PASSCODE` and enter it in Settings under "Site has its own key with a passcode?".
+**Optional: put the key on Netlify instead,** so the app works on every device without pasting it. Add `OPENROUTER_API_KEY` under **Site configuration → Environment variables**, then redeploy. The site's key only ever reaches free models, because the proxy blocks paid models and paid plugins, so it can't cost you money. Anyone who opens the site can use its free daily messages.
 
 ### Free model limits
 
@@ -46,8 +50,10 @@ Browser (SolidJS PWA)
 | `src/lib/models.ts` | Picks the free chat models out of OpenRouter's list |
 | `src/lib/store.ts` | Chats, streaming state, IndexedDB persistence |
 | `src/components/` | Sidebar, model picker, thread, composer, canvas, settings |
-| `netlify/edge-functions/` | `openrouter` proxy and `status` |
-| `netlify/shared/proxy.ts` | Path allowlist, free-model guard for the site key, optional passcode |
+| `src/lib/github.ts`, `src/lib/web.ts`, `src/lib/tools.ts` | GitHub repo reader, web page reader, AI tools |
+| `netlify/edge-functions/` | `openrouter` proxy, `read` (web pages) and `status` |
+| `netlify/shared/proxy.ts` | Path allowlist and free-model guard for the site key |
+| `netlify/shared/read.ts` | Fetches public web pages and turns them into text |
 
 ## Deploy to Netlify
 

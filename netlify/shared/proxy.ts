@@ -27,29 +27,6 @@ export function json(status: number, body: unknown) {
   })
 }
 
-async function digest(value: string) {
-  return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))
-}
-
-/**
- * The server passcode is optional: set APP_PASSCODE to stop strangers using up the site key's
- * free daily quota. Compared in constant time.
- */
-export async function checkPasscode(req: Request, env: (name: string) => string | undefined) {
-  const expected = env("APP_PASSCODE")
-  if (!expected) return undefined
-  const a = await digest(req.headers.get("x-app-passcode") ?? "")
-  const b = await digest(expected)
-  let diff = 0
-  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i]
-  if (diff !== 0) return json(401, { error: { message: "This site needs its server passcode. Enter it in Settings." } })
-  return undefined
-}
-
-export async function hasPasscode(req: Request, env: (name: string) => string | undefined) {
-  return (await checkPasscode(req, env)) === undefined
-}
-
 /** Free models end in ":free"; openrouter/free routes to one of them. */
 export function isFreeModel(id: unknown) {
   return typeof id === "string" && (id.endsWith(":free") || id === "openrouter/free")
@@ -86,13 +63,11 @@ export async function proxy(req: Request, upstream: Upstream, env: (name: string
   if (!key && !upstream.open.some((rule) => rule.test(path))) {
     key = env(upstream.keyEnv)
     if (!key) return json(401, { error: { message: "Add your free OpenRouter key in Settings to start chatting." } })
-    const denied = await checkPasscode(req, env)
-    if (denied) return denied
     const paid = body && paidFeature(body)
     if (paid) return json(403, { error: { message: paid } })
   }
 
-  const headers = new Headers({ "http-referer": url.origin, "x-openrouter-title": "Personal AI" })
+  const headers = new Headers({ "http-referer": url.origin, "x-openrouter-title": "Jonny's AI project" })
   if (key) headers.set("authorization", `Bearer ${key}`)
   for (const name of upstream.forward) {
     const value = req.headers.get(name)

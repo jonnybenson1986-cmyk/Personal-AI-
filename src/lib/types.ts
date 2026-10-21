@@ -33,6 +33,8 @@ export interface Reply {
 
 export interface Turn {
   id: string
+  /** AI tool from the + menu, e.g. "summarize". */
+  tool?: string
   text: string
   attachments: Attachment[]
   replies: Reply[]
@@ -52,12 +54,12 @@ export interface Conversation {
 }
 
 export interface Settings {
-  /** Optional server passcode (APP_PASSCODE), only needed if the site's key is protected. */
-  passcode: string
   /** The user's OpenRouter key. Stored on this device only. */
   openrouterKey: string
-  /** SHA-256 of the app lock passcode; unset means the default. */
-  pinHash?: string
+  /** Optional GitHub token for private repos. Stored on this device only. */
+  githubToken: string
+  /** Repos added recently, newest first ("owner/repo"). */
+  recentRepos: string[]
   system: string
   theme: "system" | "light" | "dark"
   models: ModelRef[]

@@ -12,9 +12,9 @@ export default defineConfig({
       registerType: "prompt",
       includeAssets: ["favicon.svg", "apple-touch-icon.png"],
       manifest: {
-        name: "Personal AI",
-        short_name: "Personal AI",
-        description: "One private chat app for Claude and ChatGPT.",
+        name: "Jonny's AI project",
+        short_name: "Jonny's AI project",
+        description: "Jonny's private AI chat, coding and research app.",
         id: "/",
         start_url: "/",
         scope: "/",

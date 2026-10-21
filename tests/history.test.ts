@@ -65,3 +65,10 @@ test("only free chat models make the picker, with Auto first", () => {
   assert.equal(models[1].hint, "Sees images · 262K context")
   assert.deepEqual(filterFreeModels([]), [])
 })
+
+test("an AI tool's instruction leads the message", () => {
+  const t: Turn = { ...turn("Bonjour tout le monde"), tool: "translate" }
+  const [message] = chatMessages("", [], t, auto)
+  assert.match(message.content as string, /^Translate the following\..*\n\nBonjour tout le monde$/s)
+  assert.equal(chatMessages("", [], { ...turn("hard question"), tool: "think" }, auto)[0].content, "hard question")
+})

@@ -1,6 +1,6 @@
-import { createEffect, createSignal, For, Match, onMount, Show, Switch } from "solid-js"
+import { createEffect, createSignal, For, onMount, Show } from "solid-js"
 import { useRegisterSW } from "virtual:pwa-register/solid"
-import { InstallHelp, SettingsDialog, Unlock } from "./components/Dialogs"
+import { InstallHelp, SettingsDialog } from "./components/Dialogs"
 import { IconCompose, IconMenu } from "./components/icons"
 import { Canvas } from "./components/Canvas"
 import { Composer } from "./components/Composer"
@@ -8,8 +8,7 @@ import { ModelPicker } from "./components/ModelPicker"
 import { Sidebar } from "./components/Sidebar"
 import { Thread } from "./components/Thread"
 import { canChat, refreshStatus } from "./lib/catalog"
-import { checkPin } from "./lib/lock"
-import { activeConversation, loadConversations, loaded, newChat, settings, updateSettings } from "./lib/store"
+import { activeConversation, loadConversations, loaded, newChat, settings } from "./lib/store"
 
 const SUGGESTIONS = [
   "Explain a tricky concept simply",
@@ -19,8 +18,6 @@ const SUGGESTIONS = [
 ]
 
 export function App() {
-  const [locked, setLocked] = createSignal(true)
-  const [unlockError, setUnlockError] = createSignal<string>()
   const [sidebar, setSidebar] = createSignal(false)
   const [showSettings, setShowSettings] = createSignal(false)
   const [showInstall, setShowInstall] = createSignal(false)
@@ -37,20 +34,15 @@ export function App() {
     else root.dataset.theme = settings.theme
   })
 
-  async function unlock(pin: string) {
-    setUnlockError(undefined)
-    if (!(await checkPin(pin))) return setUnlockError("Wrong passcode.")
-    setLocked(false)
+  onMount(() => {
+    void loadConversations()
     void refreshStatus(settings)
-  }
-
-  onMount(() => void loadConversations())
+  })
 
   const noKeys = () => canChat() === false
 
   return (
     <>
-    {/* Outside the lock so an update can be applied before unlocking. */}
     <Show when={needRefresh()}>
       <div class="toast">
         A new version is ready.
@@ -59,11 +51,6 @@ export function App() {
         </button>
       </div>
     </Show>
-    <Switch>
-      <Match when={locked()}>
-        <Unlock error={unlockError()} onSubmit={unlock} />
-      </Match>
-      <Match when={!locked()}>
         <div class="app">
           <Sidebar open={sidebar()} onClose={() => setSidebar(false)} onSettings={() => setShowSettings(true)} onInstallHelp={() => setShowInstall(true)} />
           <main class="main">
@@ -88,7 +75,7 @@ export function App() {
                     <div class="welcome">
                       <div class="setup">
                         <h1>One step to start</h1>
-                        <p class="muted">Personal AI runs on free open models through OpenRouter. Get a free key, no card needed:</p>
+                        <p class="muted">Jonny's AI project runs on free open models through OpenRouter. Get a free key, no card needed:</p>
                         <ol class="steps setup-steps">
                           <li>
                             Sign up at{" "}
@@ -138,18 +125,12 @@ export function App() {
           <Show when={showSettings()}>
             <SettingsDialog
               onClose={() => setShowSettings(false)}
-              onLock={() => {
-                setShowSettings(false)
-                setLocked(true)
-              }}
             />
           </Show>
           <Show when={showInstall()}>
             <InstallHelp onClose={() => setShowInstall(false)} />
           </Show>
         </div>
-      </Match>
-    </Switch>
     </>
   )
 }

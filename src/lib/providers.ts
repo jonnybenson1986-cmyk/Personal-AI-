@@ -3,10 +3,10 @@
 import OpenAI from "openai"
 import { chatMessages } from "./history"
 import { filterFreeModels, type OpenRouterModel } from "./models"
+import { findTool } from "./tools"
 import type { Conversation, ModelInfo, ModelRef, StreamEvents, StreamResult, Turn } from "./types"
 
 export interface Credentials {
-  passcode: string
   openrouterKey: string
 }
 
@@ -19,7 +19,6 @@ function client(c: Credentials) {
     baseURL: `${location.origin}/api/openrouter/v1`,
     apiKey: c.openrouterKey.trim() || PLACEHOLDER_KEY,
     dangerouslyAllowBrowser: true,
-    defaultHeaders: { "x-app-passcode": c.passcode },
     maxRetries: 1,
   })
 }
@@ -50,7 +49,9 @@ export async function streamReply(req: StreamRequest): Promise<StreamResult> {
       model: req.model.id,
       messages: chatMessages(req.conversation.system, req.history, req.current, req.model) as OpenAI.Chat.ChatCompletionMessageParam[],
       stream: true,
-    },
+      // OpenRouter's reasoning control; models that don't reason ignore it.
+      ...(findTool(req.current.tool)?.reasoning ? { reasoning: { effort: "high" } } : {}),
+    } as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
     { signal: req.signal },
   )
 
@@ -83,25 +84,15 @@ export async function listModels(): Promise<ModelInfo[]> {
   return filterFreeModels(body.data)
 }
 
-export interface ServerStatus {
-  serverKey: boolean
-  passcodeSet: boolean
-  unlocked: boolean
-}
-
-export async function serverStatus(passcode: string): Promise<ServerStatus> {
+/** Whether the site has its own OpenRouter key (set on Netlify). */
+export async function hasServerKey() {
   try {
-    const res = await fetch("/api/status", { headers: { "x-app-passcode": passcode } })
-    if (res.ok) return (await res.json()) as ServerStatus
+    const res = await fetch("/api/status")
+    if (res.ok) return ((await res.json()) as { serverKey: boolean }).serverKey
   } catch {
     // Offline: only a key entered in the app counts.
   }
-  return { serverKey: false, passcodeSet: false, unlocked: false }
-}
-
-/** The app can chat with a key from Settings, or with the site's key (behind its passcode if one is set). */
-export function ready(credentials: Credentials, server: ServerStatus) {
-  return !!credentials.openrouterKey.trim() || (server.serverKey && server.unlocked)
+  return false
 }
 
 export function errorMessage(error: unknown) {

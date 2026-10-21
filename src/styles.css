@@ -1538,3 +1538,143 @@ button:disabled {
     z-index: 45;
   }
 }
+
+/* + menu */
+
+.tools-menu {
+  position: relative;
+}
+
+.menu {
+  position: absolute;
+  left: 0;
+  z-index: 30;
+  width: min(290px, calc(100vw - 32px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 6px;
+}
+
+.menu.up {
+  bottom: calc(100% + 8px);
+}
+
+.menu.down {
+  top: calc(100% + 8px);
+}
+
+.file-chip svg {
+  flex-shrink: 0;
+}
+
+.menu-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+  padding: 8px 10px 4px;
+}
+
+.menu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  text-align: left;
+}
+
+.menu button:hover,
+.menu button.on {
+  background: var(--hover);
+}
+
+.menu button small {
+  display: block;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.menu button svg {
+  flex-shrink: 0;
+  color: var(--text-2);
+}
+
+/* GitHub dialog */
+
+.recent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.recent .chip {
+  height: 28px;
+}
+
+.repo-meta {
+  margin: 12px 0 6px;
+}
+
+.file-list {
+  margin-top: 8px;
+  max-height: min(42vh, 360px);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.file-row:hover {
+  background: var(--hover);
+}
+
+.file-path {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.map-row {
+  margin-top: 8px;
+}
+
+.modal .notice {
+  margin-top: 10px;
+}
+
+.modal .edit-actions {
+  align-items: center;
+  margin-top: 12px;
+}
+
+.modal form.inline {
+  margin-top: 4px;
+}
+
+.tool-tag {
+  font-size: 12px;
+  color: var(--accent-ai);
+  font-weight: 600;
+}

@@ -12,8 +12,9 @@ const convKey = (id: string) => `conversation:${id}`
 export const uid = () => crypto.randomUUID()
 
 const defaults: Settings = {
-  passcode: "",
   openrouterKey: "",
+  githubToken: "",
+  recentRepos: [],
   system: "",
   theme: "system",
   models: DEFAULT_SELECTION,
@@ -120,12 +121,12 @@ export function stop(id: string) {
 }
 
 function titleFrom(text: string, attachments: Attachment[]) {
-  const line = text.trim().split("\n")[0] || attachments[0]?.name || "New chat"
+  const line = text.trim().split("\n")[0] || attachments.find((a) => !a.name.endsWith("(file list)"))?.name || attachments[0]?.name || "New chat"
   return line.length > 48 ? line.slice(0, 47).trimEnd() + "…" : line
 }
 
 /** Sends a message: starts a chat if needed, then streams one reply per selected model. */
-export function send(text: string, attachments: Attachment[]) {
+export function send(text: string, attachments: Attachment[], tool?: string) {
   let id = activeId()
   if (!id) {
     const now = Date.now()
@@ -143,7 +144,7 @@ export function send(text: string, attachments: Attachment[]) {
     persistIndex()
     id = conv.id
   }
-  const turn: Turn = { id: uid(), text, attachments, replies: [], createdAt: Date.now() }
+  const turn: Turn = { id: uid(), tool, text, attachments, replies: [], createdAt: Date.now() }
   mutate(id, (c) => {
     c.models = settings.models.map((m) => ({ ...m }))
     c.turns.push(turn)
