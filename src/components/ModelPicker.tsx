@@ -1,8 +1,8 @@
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js"
-import { catalog, status } from "../lib/catalog"
-import { modelLabel, PROVIDER_NAME, sameModel } from "../lib/models"
+import { catalog } from "../lib/catalog"
+import { modelLabel, sameModel } from "../lib/models"
 import { settings, updateSettings } from "../lib/store"
-import type { ModelInfo, ProviderId } from "../lib/types"
+import type { ModelInfo } from "../lib/types"
 import { IconCheck, IconChevron, IconColumns } from "./icons"
 
 export function ModelPicker() {
@@ -21,16 +21,9 @@ export function ModelPicker() {
     document.removeEventListener("keydown", esc)
   })
 
-  const groups = () =>
-    (["anthropic", "openai"] as ProviderId[]).map((provider) => ({
-      provider,
-      models: catalog().filter((m) => m.provider === provider),
-      enabled: status()?.[provider] ?? true,
-    }))
-
   function choose(model: ModelInfo, slot: number) {
     const next = settings.models.map((m) => ({ ...m }))
-    next[slot] = { provider: model.provider, id: model.id }
+    next[slot] = { id: model.id }
     updateSettings({ models: next })
     if (!compare()) setOpen(false)
   }
@@ -38,9 +31,8 @@ export function ModelPicker() {
   function toggleCompare() {
     if (compare()) return updateSettings({ models: [settings.models[0]] })
     const first = settings.models[0]
-    // Pair with the other provider's first model, so compare defaults to Claude vs ChatGPT.
-    const other = catalog().find((m) => m.provider !== first.provider && status()?.[m.provider] !== false) ?? catalog().find((m) => !sameModel(m, first))
-    if (other) updateSettings({ models: [first, { provider: other.provider, id: other.id }] })
+    const other = catalog().find((m) => !sameModel(m, first))
+    if (other) updateSettings({ models: [first, { id: other.id }] })
   }
 
   return (
@@ -52,7 +44,7 @@ export function ModelPicker() {
               <Show when={i() > 0}>
                 <span class="vs">vs</span>
               </Show>
-              <span class={`dot ${m.provider}`} />
+              <span class="dot" />
               <span>{modelLabel(m, catalog())}</span>
             </>
           )}
@@ -73,35 +65,20 @@ export function ModelPicker() {
             <For each={compare() ? [0, 1] : [0]}>
               {(slot) => (
                 <div class="picker-column">
-                  <Show when={compare()}>
-                    <div class="picker-slot">{slot === 0 ? "Left" : "Right"}</div>
-                  </Show>
-                  <For each={groups()}>
-                    {(group) => (
-                      <div class="picker-group">
-                        <div class="picker-heading">
-                          <span class={`dot ${group.provider}`} />
-                          {PROVIDER_NAME[group.provider]}
-                          <Show when={!group.enabled}>
-                            <span class="muted"> · no API key</span>
+                  <div class="picker-heading">{compare() ? (slot === 0 ? "Left" : "Right") : "Free models"}</div>
+                  <For each={catalog()}>
+                    {(m) => (
+                      <button class="picker-item" role="menuitem" onClick={() => choose(m, slot)}>
+                        <span>
+                          {m.label}
+                          <Show when={m.hint}>
+                            <small>{m.hint}</small>
                           </Show>
-                        </div>
-                        <For each={group.models}>
-                          {(m) => (
-                            <button class="picker-item" role="menuitem" disabled={!group.enabled} onClick={() => choose(m, slot)}>
-                              <span>
-                                {m.label}
-                                <Show when={m.hint}>
-                                  <small>{m.hint}</small>
-                                </Show>
-                              </span>
-                              <Show when={settings.models[slot] && sameModel(settings.models[slot], m)}>
-                                <IconCheck />
-                              </Show>
-                            </button>
-                          )}
-                        </For>
-                      </div>
+                        </span>
+                        <Show when={settings.models[slot] && sameModel(settings.models[slot], m)}>
+                          <IconCheck />
+                        </Show>
+                      </button>
                     )}
                   </For>
                 </div>

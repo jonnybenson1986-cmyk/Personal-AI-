@@ -1,13 +1,12 @@
-import { createEffect, createResource, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
 import { download, setCanvas } from "../lib/canvas"
 import { catalog } from "../lib/catalog"
 import { isImage } from "../lib/history"
 import { fileExtension, renderMarkdown } from "../lib/markdown"
-import { loadMedia, mediaUrl } from "../lib/media"
 import { modelLabel } from "../lib/models"
-import { editAndResend, isStreaming, previews, regenerate } from "../lib/store"
+import { editAndResend, isStreaming, regenerate } from "../lib/store"
 import type { Conversation, Reply, Turn } from "../lib/types"
-import { IconCheck, IconCopy, IconDownload, IconEdit, IconFile, IconRefresh } from "./icons"
+import { IconCheck, IconCopy, IconEdit, IconFile, IconRefresh } from "./icons"
 
 function CopyButton(props: { text: () => string; label?: string }) {
   const [done, setDone] = createSignal(false)
@@ -50,55 +49,19 @@ function Markdown(props: { text: string }) {
   return <div class="markdown" innerHTML={html()} />
 }
 
-/** A generated image or video, or its live preview / render progress while it's being made. */
-function MediaView(props: { reply: Reply }) {
-  const media = () => props.reply.media!
-  const [url] = createResource(() => media().id, mediaUrl)
-  const save = async () => {
-    const blob = await loadMedia(media().id!)
-    if (blob) download(`${media().prompt.slice(0, 40).replace(/[^\w-]+/g, "-").toLowerCase() || media().kind}.${media().kind === "image" ? "png" : "mp4"}`, blob)
-  }
-  return (
-    <div class={`media ${media().kind}`}>
-      <Show
-        when={url()}
-        fallback={
-          <Show when={props.reply.status === "streaming"}>
-            <div class="media-pending">
-              <Show when={previews[props.reply.id]} fallback={<div class="media-placeholder shimmer-bg" />}>
-                <img src={previews[props.reply.id]} alt="Preview" class="blurred" />
-              </Show>
-              <Show when={media().kind === "video" && media().progress !== undefined}>
-                <div class="progress">
-                  <div style={{ width: `${Math.max(4, media().progress ?? 0)}%` }} />
-                </div>
-              </Show>
-            </div>
-          </Show>
-        }
-      >
-        <Show when={media().kind === "image"} fallback={<video src={url()} controls playsinline loop />}>
-          <a href={url()} target="_blank" rel="noopener">
-            <img src={url()} alt={media().prompt} />
-          </a>
-        </Show>
-        <button class="button ghost media-save" onClick={save}>
-          <IconDownload /> Download
-        </button>
-      </Show>
-    </div>
-  )
-}
-
 function ReplyView(props: { reply: Reply; last: boolean; convId: string; compare: boolean }) {
   const r = () => props.reply
   const [showThinking, setShowThinking] = createSignal(false)
   const thinkingActive = () => r().status === "streaming" && r().thinking !== "" && r().text === ""
   return (
-    <div class={`reply ${r().model.provider}`}>
+    <div class="reply">
       <div class="reply-model">
-        <span class={`dot ${r().model.provider}`} />
+        <span class="dot" />
         {modelLabel(r().model, catalog())}
+        {/* "Auto" picks a model per message; say which one answered. */}
+        <Show when={r().servedBy && !r().servedBy!.startsWith(r().model.id.replace(/:free$/, ""))}>
+          <span class="served-by">· {modelLabel(r().servedBy!, catalog())}</span>
+        </Show>
       </div>
       <Show when={r().thinking}>
         <button class="thinking-toggle" onClick={() => setShowThinking(!showThinking())} aria-expanded={showThinking()}>
@@ -111,38 +74,15 @@ function ReplyView(props: { reply: Reply; last: boolean; convId: string; compare
           </div>
         </Show>
       </Show>
-      <Show when={r().activity}>
-        <div class="activity shimmer">{r().activity}…</div>
-      </Show>
-      <Show when={r().status === "streaming" && !r().text && !r().thinking && !r().activity && !r().media}>
+      <Show when={r().status === "streaming" && !r().text && !r().thinking}>
         <div class="typing" aria-label="Waiting for response">
           <span />
           <span />
           <span />
         </div>
       </Show>
-      <Show when={r().media}>
-        <MediaView reply={r()} />
-      </Show>
       <Show when={r().text}>
         <Markdown text={r().text} />
-      </Show>
-      <Show when={r().sources.length}>
-        <details class="sources">
-          <summary>{r().sources.length} sources</summary>
-          <ol>
-            <For each={r().sources}>
-              {(s) => (
-                <li>
-                  <a href={s.url} target="_blank" rel="noopener noreferrer">
-                    {s.title || new URL(s.url).hostname}
-                  </a>
-                  <span class="muted"> {new URL(s.url).hostname.replace(/^www\./, "")}</span>
-                </li>
-              )}
-            </For>
-          </ol>
-        </details>
       </Show>
       <Show when={r().error}>
         <div class={r().status === "error" ? "notice error" : "notice"}>{r().error}</div>

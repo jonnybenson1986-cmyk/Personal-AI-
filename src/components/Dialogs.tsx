@@ -1,9 +1,9 @@
 import { createSignal, type JSX, Show } from "solid-js"
-import { refreshStatus, status } from "../lib/catalog"
+import { canChat, refreshStatus } from "../lib/catalog"
 import { isIOS } from "../lib/install"
 import { setPin } from "../lib/lock"
 import { clearAll, settings, updateSettings } from "../lib/store"
-import type { Effort, Settings } from "../lib/types"
+import type { Settings } from "../lib/types"
 import { IconX } from "./icons"
 
 export function Modal(props: { title: string; onClose: () => void; children: JSX.Element }) {
@@ -98,30 +98,25 @@ export function SettingsDialog(props: { onClose: () => void; onLock: () => void 
   }
   return (
     <Modal title="Settings" onClose={props.onClose}>
-      <h3 class="section">API keys</h3>
-      <p class="muted small-text">Saved only on this device and sent straight to Anthropic or OpenAI. Usage is billed to your API account.</p>
+      <h3 class="section">AI</h3>
+      <p class="muted small-text">
+        Personal AI uses free open models (Gemma, Nemotron, MiniMax and more) through OpenRouter. A free OpenRouter key is all it needs.
+      </p>
       <KeyField
-        label="Anthropic API key (Claude)"
-        hint="From console.anthropic.com → API keys"
-        placeholder="sk-ant-…"
-        value={settings.anthropicKey}
-        onSave={(anthropicKey) => save({ anthropicKey })}
-      />
-      <KeyField
-        label="OpenAI API key (ChatGPT)"
-        hint="From platform.openai.com → API keys"
-        placeholder="sk-…"
-        value={settings.openaiKey}
-        onSave={(openaiKey) => save({ openaiKey })}
+        label="OpenRouter key"
+        hint="Free: sign up at openrouter.ai, then Settings → API Keys → Create. No card needed. Saved only on this device."
+        placeholder="sk-or-…"
+        value={settings.openrouterKey}
+        onSave={(openrouterKey) => save({ openrouterKey })}
       />
       <p class="small-text key-status">
-        Claude: <strong>{status()?.anthropic ? "ready" : "no key"}</strong> · ChatGPT: <strong>{status()?.openai ? "ready" : "no key"}</strong>
+        Status: <strong>{canChat() ? "ready" : "add a key to start"}</strong>
       </p>
       <details class="advanced">
-        <summary>Using keys stored on Netlify instead?</summary>
+        <summary>Site has its own key with a passcode?</summary>
         <KeyField
           label="Server passcode"
-          hint="The APP_PASSCODE you set in Netlify's environment variables."
+          hint="Only if APP_PASSCODE is set in Netlify's environment variables."
           placeholder="APP_PASSCODE"
           value={settings.passcode}
           onSave={(passcode) => save({ passcode })}
@@ -139,19 +134,6 @@ export function SettingsDialog(props: { onClose: () => void; onLock: () => void 
           onChange={(e) => updateSettings({ system: e.currentTarget.value })}
         />
       </label>
-      <div class="field">
-        <span>Thinking effort</span>
-        <small>How hard the models think before answering. Higher is slower and costs more.</small>
-        <Segmented<Effort>
-          value={settings.effort}
-          options={[
-            { value: "low", label: "Low" },
-            { value: "medium", label: "Medium" },
-            { value: "high", label: "High" },
-          ]}
-          onChange={(effort) => updateSettings({ effort })}
-        />
-      </div>
       <div class="field">
         <span>Theme</span>
         <Segmented<Settings["theme"]>

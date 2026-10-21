@@ -1,144 +1,90 @@
-// Provider adapters, after the protocol split in opencode's packages/ai: each one turns a
-// conversation into its API's request and normalizes the stream into StreamEvents.
-import Anthropic from "@anthropic-ai/sdk"
+// Talks to OpenRouter's OpenAI-compatible API through the edge proxy, using the official
+// `openai` SDK, and normalizes the stream into StreamEvents.
 import OpenAI from "openai"
-import { anthropicClient, claudeWebSearch, type Credentials, FALLBACK_MODELS, openaiClient, openaiReasons } from "./clients"
-import { anthropicMessages, openaiInput } from "./history"
-import { filterOpenAIModels } from "./models"
-import type { Conversation, Effort, ModelInfo, ModelRef, StreamEvents, StreamResult, Turn } from "./types"
+import { chatMessages } from "./history"
+import { filterFreeModels, type OpenRouterModel } from "./models"
+import type { Conversation, ModelInfo, ModelRef, StreamEvents, StreamResult, Turn } from "./types"
 
-export type { Credentials }
+export interface Credentials {
+  passcode: string
+  openrouterKey: string
+}
+
+// With a key from Settings the SDK sends it and the proxy passes it on; without one, the
+// placeholder asks the proxy to use the site's own key (free models only).
+const PLACEHOLDER_KEY = "set-on-server"
+
+function client(c: Credentials) {
+  return new OpenAI({
+    baseURL: `${location.origin}/api/openrouter/v1`,
+    apiKey: c.openrouterKey.trim() || PLACEHOLDER_KEY,
+    dangerouslyAllowBrowser: true,
+    defaultHeaders: { "x-app-passcode": c.passcode },
+    maxRetries: 1,
+  })
+}
 
 export interface StreamRequest {
   conversation: Conversation
   history: Turn[]
   current: Turn
   model: ModelRef
-  effort: Effort
   credentials: Credentials
   signal: AbortSignal
   events: StreamEvents
 }
 
-async function streamAnthropic(req: StreamRequest): Promise<StreamResult> {
-  const client = anthropicClient(req.credentials)
-  const model = req.model.id
-  const fallback = FALLBACK_MODELS.has(model)
-  const stream = client.beta.messages.stream(
-    {
-      model,
-      max_tokens: 64000,
-      system: req.conversation.system || undefined,
-      messages: anthropicMessages(req.history, req.current, req.model) as unknown as Anthropic.Beta.BetaMessageParam[],
-      // Summarized thinking is shown in the UI. drop_block keeps a chat going if an earlier
-      // thinking block can no longer be verified (for example after switching models).
-      thinking: { type: "adaptive", display: "summarized", block_binding: { prefix_mismatch_behavior: "drop_block" } },
-      output_config: { effort: req.effort },
-      tools: req.conversation.webSearch ? [claudeWebSearch(model)] : undefined,
-      betas: ["thinking-binding-controls-2026-08-01", ...(fallback ? ["server-side-fallback-2026-07-01"] : [])],
-      ...(fallback ? { fallbacks: "default" as const } : {}),
-    },
-    { signal: req.signal },
-  )
-
-  for await (const event of stream) {
-    if (event.type === "content_block_start") {
-      const block = event.content_block
-      if (block.type === "server_tool_use") req.events.activity("Searching the web")
-      if (block.type === "web_search_tool_result") {
-        req.events.activity(undefined)
-        if (Array.isArray(block.content)) for (const r of block.content) req.events.source({ url: r.url, title: r.title })
-      }
-      if (block.type === "text") req.events.activity(undefined)
-    }
-    if (event.type === "content_block_delta") {
-      if (event.delta.type === "text_delta") req.events.text(event.delta.text)
-      if (event.delta.type === "thinking_delta") req.events.thinking(event.delta.thinking)
-    }
-  }
-
-  const message = await stream.finalMessage()
-  if (message.stop_reason === "refusal") return { notice: "Claude declined to respond to this request." }
-  if (message.stop_reason === "max_tokens") return { raw: message.content, notice: "The response hit the length limit." }
-  return { raw: message.content }
+// OpenRouter extends chat-completion chunks with reasoning text and in-stream errors.
+interface Chunk {
+  model?: string
+  error?: { message?: string; code?: string | number }
+  choices?: {
+    finish_reason?: string | null
+    delta?: { content?: string | null; reasoning?: string | null; reasoning_details?: { type: string; text?: string; summary?: string }[] }
+  }[]
 }
 
-async function streamOpenAI(req: StreamRequest): Promise<StreamResult> {
-  const client = openaiClient(req.credentials)
-  const model = req.model.id
-  const stream = await client.responses.create(
+export async function streamReply(req: StreamRequest): Promise<StreamResult> {
+  const stream = await client(req.credentials).chat.completions.create(
     {
-      model,
-      instructions: req.conversation.system || undefined,
-      input: openaiInput(req.history, req.current, req.model) as unknown as OpenAI.Responses.ResponseInput,
-      store: false,
+      model: req.model.id,
+      messages: chatMessages(req.conversation.system, req.history, req.current, req.model) as OpenAI.Chat.ChatCompletionMessageParam[],
       stream: true,
-      tools: req.conversation.webSearch ? [{ type: "web_search" }] : undefined,
-      reasoning: openaiReasons(model) ? { effort: req.effort } : undefined,
     },
     { signal: req.signal },
   )
 
+  let served = false
   let notice: string | undefined
-  for await (const event of stream) {
-    switch (event.type) {
-      case "response.output_text.delta":
-        req.events.activity(undefined)
-        req.events.text(event.delta)
-        break
-      case "response.reasoning_summary_text.delta":
-        req.events.thinking(event.delta)
-        break
-      case "response.web_search_call.searching":
-        req.events.activity("Searching the web")
-        break
-      case "response.output_text.annotation.added": {
-        const a = event.annotation
-        if (a?.type === "url_citation") req.events.source({ url: a.url, title: a.title })
-        break
-      }
-      case "response.refusal.delta":
-        req.events.text(event.delta)
-        break
-      case "response.incomplete":
-        notice = "The response was cut short."
-        break
-      case "response.failed":
-        throw new Error(event.response.error?.message ?? "The response failed.")
-      case "error":
-        throw new Error(event.message)
+  for await (const raw of stream) {
+    const chunk = raw as unknown as Chunk
+    // Errors after the stream started arrive as a chunk with an `error` field.
+    if (chunk.error) throw new Error(chunk.error.message ?? "The model stopped with an error.")
+    if (!served && chunk.model) {
+      served = true
+      req.events.servedBy(chunk.model)
     }
+    const choice = chunk.choices?.[0]
+    const delta = choice?.delta
+    if (delta?.reasoning) req.events.thinking(delta.reasoning)
+    else for (const d of delta?.reasoning_details ?? []) if (d.text ?? d.summary) req.events.thinking(d.text ?? d.summary ?? "")
+    if (delta?.content) req.events.text(delta.content)
+    if (choice?.finish_reason === "length") notice = "The response hit the length limit."
+    if (choice?.finish_reason === "error") throw new Error("The model stopped with an error. Try again or pick another model.")
   }
   return { notice }
 }
 
-export function streamReply(req: StreamRequest) {
-  return req.model.provider === "anthropic" ? streamAnthropic(req) : streamOpenAI(req)
+/** Free chat models from OpenRouter's live list. Needs no key. */
+export async function listModels(): Promise<ModelInfo[]> {
+  const res = await fetch("/api/openrouter/v1/models")
+  if (!res.ok) throw new Error(`Model list failed: ${res.status}`)
+  const body = (await res.json()) as { data: OpenRouterModel[] }
+  return filterFreeModels(body.data)
 }
 
-/** Live model lists from both APIs; either may fail if its key isn't configured. */
-export async function listModels(credentials: Credentials, providers: Status) {
-  const out: ModelInfo[] = []
-  const [claude, gpt] = await Promise.allSettled([
-    providers.anthropic ? anthropicClient(credentials).models.list({ limit: 50 }) : Promise.reject(),
-    providers.openai ? openaiClient(credentials).models.list() : Promise.reject(),
-  ])
-  if (claude.status === "fulfilled")
-    for (const m of claude.value.data)
-      // Netlify AI Gateway answers with one list covering every provider, without display names.
-      if (m.id.startsWith("claude-") && !/claude-(3|instant|2)/.test(m.id))
-        out.push({ provider: "anthropic", id: m.id, label: m.display_name ?? m.id })
-  if (gpt.status === "fulfilled") out.push(...filterOpenAIModels(gpt.value.data))
-  return out
-}
-
-/** Which providers the app can use right now. */
-export interface Status {
-  anthropic: boolean
-  openai: boolean
-}
-
-export interface ServerStatus extends Status {
+export interface ServerStatus {
+  serverKey: boolean
   passcodeSet: boolean
   unlocked: boolean
 }
@@ -148,31 +94,30 @@ export async function serverStatus(passcode: string): Promise<ServerStatus> {
     const res = await fetch("/api/status", { headers: { "x-app-passcode": passcode } })
     if (res.ok) return (await res.json()) as ServerStatus
   } catch {
-    // Offline: only keys entered in the app count.
+    // Offline: only a key entered in the app counts.
   }
-  return { anthropic: false, openai: false, passcodeSet: false, unlocked: false }
+  return { serverKey: false, passcodeSet: false, unlocked: false }
 }
 
-/** A provider works with a key from Settings, or with the server's key behind its passcode. */
-export function availability(credentials: Credentials, server: ServerStatus): Status {
-  return {
-    anthropic: !!credentials.anthropicKey.trim() || (server.anthropic && server.unlocked),
-    openai: !!credentials.openaiKey.trim() || (server.openai && server.unlocked),
-  }
+/** The app can chat with a key from Settings, or with the site's key (behind its passcode if one is set). */
+export function ready(credentials: Credentials, server: ServerStatus) {
+  return !!credentials.openrouterKey.trim() || (server.serverKey && server.unlocked)
 }
 
 export function errorMessage(error: unknown) {
-  if (error instanceof Anthropic.APIError || error instanceof OpenAI.APIError) {
+  let message = error instanceof Error ? error.message : String(error)
+  if (error instanceof OpenAI.APIError) {
     const body = error.error as { error?: { message?: string }; message?: string } | undefined
-    return body?.error?.message ?? body?.message ?? error.message
+    message = body?.error?.message ?? body?.message ?? error.message
+    if (error.status === 401 && !/Settings/.test(message)) return "OpenRouter didn't accept the key. Check it in Settings → OpenRouter key."
+    if (error.status === 429) return "Free-model limit reached for now. Wait a minute, or try another model. (Free models allow about 20 messages a minute and 50 a day.)"
   }
-  return error instanceof Error ? error.message : String(error)
+  // Some free models are only offered to accounts that allow providers to use prompts.
+  if (/data policy|privacy/i.test(message))
+    return `${message} — To use free models, open openrouter.ai/settings/privacy and allow free model providers, or pick another model.`
+  return message
 }
 
 export function isAbort(error: unknown) {
-  return (
-    error instanceof Anthropic.APIUserAbortError ||
-    error instanceof OpenAI.APIUserAbortError ||
-    (error instanceof DOMException && error.name === "AbortError")
-  )
+  return error instanceof OpenAI.APIUserAbortError || (error instanceof DOMException && error.name === "AbortError")
 }

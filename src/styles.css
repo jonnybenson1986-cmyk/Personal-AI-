@@ -12,7 +12,7 @@
   --accent: #1f1e1c;
   --accent-text: #faf9f6;
   --bubble: #ecebe6;
-  --claude: #d97757;
+  --accent-ai: #6467f2;
   --chatgpt: #10a37f;
   --danger: #c2412d;
   --danger-bg: rgba(194, 65, 45, 0.08);
@@ -411,12 +411,19 @@ button:disabled {
   flex-shrink: 0;
 }
 
-.dot.anthropic {
-  background: var(--claude);
+.dot {
+  background: var(--accent-ai);
 }
 
-.dot.openai {
-  background: var(--chatgpt);
+.served-by {
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+.setup-steps {
+  text-align: left;
+  margin: 0 auto 8px;
+  color: var(--text-2);
 }
 
 .picker {
@@ -1480,114 +1487,6 @@ button:disabled {
 
 .setup p {
   margin: 0 0 8px;
-}
-
-/* Tools menu */
-
-.tools-menu {
-  position: relative;
-}
-
-.menu {
-  position: absolute;
-  left: 0;
-  z-index: 30;
-  min-width: 210px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
-  padding: 5px;
-}
-
-.menu.up {
-  bottom: calc(100% + 6px);
-}
-
-.menu button {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  font-size: 14px;
-  text-align: left;
-}
-
-.menu button:hover {
-  background: var(--hover);
-}
-
-.mini-select {
-  height: 32px;
-  border-radius: 999px;
-  border: 1px solid var(--border-strong);
-  background: var(--surface);
-  padding: 0 10px;
-  font: inherit;
-  font-size: 13px;
-  color: var(--text-2);
-}
-
-/* Generated media */
-
-.media {
-  margin: 4px 0 8px;
-}
-
-.media img,
-.media video,
-.media-placeholder {
-  display: block;
-  max-width: min(100%, 512px);
-  max-height: 70vh;
-  border-radius: 14px;
-  border: 1px solid var(--border);
-}
-
-.media-pending {
-  position: relative;
-  width: min(100%, 512px);
-}
-
-.media-placeholder {
-  width: 100%;
-  aspect-ratio: 1;
-}
-
-.media.video .media-placeholder {
-  aspect-ratio: 16 / 9;
-}
-
-.media img.blurred {
-  filter: blur(6px);
-}
-
-.shimmer-bg {
-  background: linear-gradient(100deg, var(--surface-2) 30%, var(--hover) 50%, var(--surface-2) 70%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s linear infinite;
-}
-
-.progress {
-  height: 4px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  margin-top: 8px;
-  overflow: hidden;
-}
-
-.progress div {
-  height: 100%;
-  background: var(--chatgpt);
-  transition: width 0.4s;
-}
-
-.media-save {
-  margin-top: 8px;
-  padding: 5px 10px;
-  font-size: 13px;
 }
 
 /* Canvas */

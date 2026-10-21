@@ -4,7 +4,7 @@ import type { Attachment } from "./types"
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"]
 const TEXT_EXT = /\.(txt|md|markdown|csv|tsv|json|jsonl|xml|yaml|yml|toml|ini|log|html|css|js|jsx|ts|tsx|py|rb|go|rs|java|kt|swift|c|h|cpp|hpp|cs|php|sh|sql)$/i
 const MAX_BYTES = 20 * 1024 * 1024
-// Larger images cost more tokens without helping either model; this is Claude's sweet spot.
+// Larger images cost more tokens without helping the model.
 const MAX_SIDE = 1568
 
 function toBase64(buffer: ArrayBuffer) {
@@ -33,13 +33,10 @@ export async function readFile(file: File): Promise<Attachment> {
   if (IMAGE_TYPES.includes(file.type) || file.type.startsWith("image/")) {
     return { id: uid(), name: file.name || "image", ...(await shrinkImage(file)) }
   }
-  if (file.type === "application/pdf") {
-    return { id: uid(), name: file.name, mediaType: file.type, data: toBase64(await file.arrayBuffer()) }
-  }
   if (file.type.startsWith("text/") || TEXT_EXT.test(file.name) || file.type === "application/json") {
     return { id: uid(), name: file.name, mediaType: "text/plain", data: toBase64(await file.arrayBuffer()) }
   }
-  throw new Error(`${file.name}: only images, PDFs and text files can be attached.`)
+  throw new Error(`${file.name}: only images and text files can be attached.`)
 }
 
-export const ACCEPT = "image/*,application/pdf,text/*,.md,.csv,.json,.yaml,.yml,.toml,.js,.jsx,.ts,.tsx,.py,.rb,.go,.rs,.java,.kt,.swift,.c,.h,.cpp,.cs,.php,.sh,.sql,.log"
+export const ACCEPT = "image/*,text/*,.md,.csv,.json,.yaml,.yml,.toml,.js,.jsx,.ts,.tsx,.py,.rb,.go,.rs,.java,.kt,.swift,.c,.h,.cpp,.cs,.php,.sh,.sql,.log"

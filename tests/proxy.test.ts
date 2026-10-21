@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { afterEach, test } from "node:test"
-import { anthropic, openai, proxy } from "../netlify/shared/proxy.ts"
+import { isFreeModel, openrouter, proxy } from "../netlify/shared/proxy.ts"
 
 const env = (vars: Record<string, string>) => (name: string) => vars[name]
 const realFetch = globalThis.fetch
@@ -17,116 +17,73 @@ function capture() {
   return calls
 }
 
-const keys = { APP_PASSCODE: "open sesame", ANTHROPIC_API_KEY: "sk-ant-real", OPENAI_API_KEY: "sk-real" }
+const chat = (body: unknown, headers: Record<string, string> = {}) =>
+  new Request("https://site.app/api/openrouter/v1/chat/completions", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) })
 
-test("refuses requests without the right passcode", async () => {
+const server = { OPENROUTER_API_KEY: "sk-or-site" }
+
+test("a user's own key is passed through for any model", async () => {
   const calls = capture()
-  const res = await proxy(new Request("https://x/api/anthropic/v1/messages", { method: "POST", headers: { "x-app-passcode": "nope" } }), anthropic, env(keys))
-  assert.equal(res.status, 401)
-  assert.equal(calls.length, 0)
-})
-
-test("fails closed when no passcode is configured", async () => {
-  const res = await proxy(new Request("https://x/api/anthropic/v1/messages", { method: "POST" }), anthropic, env({ ANTHROPIC_API_KEY: "k" }))
-  assert.equal(res.status, 503)
-})
-
-test("a user's own key is forwarded without a server passcode", async () => {
-  const calls = capture()
-  const res = await proxy(
-    new Request("https://x/api/anthropic/v1/messages", { method: "POST", headers: { "x-api-key": "sk-ant-mine" }, body: "{}" }),
-    anthropic,
-    env({}),
-  )
+  const res = await proxy(chat({ model: "google/gemma-4-31b-it" }, { authorization: "Bearer sk-or-mine" }), openrouter, env({}))
   assert.equal(res.status, 200)
-  assert.equal(new Headers(calls[0].init.headers).get("x-api-key"), "sk-ant-mine")
-
-  await proxy(new Request("https://x/api/openai/v1/responses", { method: "POST", headers: { authorization: "Bearer sk-mine" }, body: "{}" }), openai, env({}))
-  assert.equal(new Headers(calls[1].init.headers).get("authorization"), "Bearer sk-mine")
-})
-
-test("the placeholder key never unlocks the server's key", async () => {
-  const calls = capture()
-  const res = await proxy(
-    new Request("https://x/api/anthropic/v1/messages", { method: "POST", headers: { "x-api-key": "set-on-server" }, body: "{}" }),
-    anthropic,
-    env(keys),
-  )
-  assert.equal(res.status, 401)
-  assert.equal(calls.length, 0)
-})
-
-test("only forwards allowed paths", async () => {
-  const calls = capture()
-  const res = await proxy(new Request("https://x/api/anthropic/v1/files", { headers: { "x-app-passcode": "open sesame" } }), anthropic, env(keys))
-  assert.equal(res.status, 404)
-  assert.equal(calls.length, 0)
-})
-
-test("swaps in the server key and strips browser credentials", async () => {
-  const calls = capture()
-  const res = await proxy(
-    new Request("https://x/api/anthropic/v1/messages", {
-      method: "POST",
-      headers: { "x-app-passcode": "open sesame", "x-api-key": "set-on-server", "anthropic-version": "2023-06-01", "anthropic-beta": "a,b", cookie: "c=1" },
-      body: "{}",
-    }),
-    anthropic,
-    env(keys),
-  )
-  assert.equal(res.status, 200)
-  assert.equal(calls[0].url, "https://api.anthropic.com/v1/messages")
+  assert.equal(calls[0].url, "https://openrouter.ai/api/v1/chat/completions")
   const headers = new Headers(calls[0].init.headers)
-  assert.equal(headers.get("x-api-key"), "sk-ant-real")
-  assert.equal(headers.get("anthropic-beta"), "a,b")
-  assert.equal(headers.get("cookie"), null)
-  assert.equal(headers.get("x-app-passcode"), null)
+  assert.equal(headers.get("authorization"), "Bearer sk-or-mine")
+  assert.equal(headers.get("x-openrouter-title"), "Personal AI")
+  assert.equal(headers.get("http-referer"), "https://site.app")
   assert.equal(res.headers.get("content-encoding"), null)
   assert.equal(res.headers.get("set-cookie"), null)
   assert.equal(await res.text(), "data: hi\n\n")
 })
 
-test("OpenAI uses a bearer token and keeps the query string", async () => {
+test("the site's key works for free models only", async () => {
   const calls = capture()
-  await proxy(new Request("https://x/api/openai/v1/models?limit=5", { headers: { "x-app-passcode": "open sesame", authorization: "Bearer set-on-server" } }), openai, env(keys))
-  assert.equal(calls[0].url, "https://api.openai.com/v1/models?limit=5")
-  assert.equal(new Headers(calls[0].init.headers).get("authorization"), "Bearer sk-real")
+  const free = await proxy(chat({ model: "google/gemma-4-31b-it:free" }, { authorization: "Bearer set-on-server" }), openrouter, env(server))
+  assert.equal(free.status, 200)
+  assert.equal(new Headers(calls[0].init.headers).get("authorization"), "Bearer sk-or-site")
+  const router = await proxy(chat({ model: "openrouter/free" }), openrouter, env(server))
+  assert.equal(router.status, 200)
+
+  for (const body of [{ model: "google/gemma-4-31b-it" }, { model: "openrouter/auto" }, { model: "x:free", models: ["x:free", "paid/model"] }, { model: "x:free", plugins: [{ id: "web" }] }]) {
+    const res = await proxy(chat(body), openrouter, env(server))
+    assert.equal(res.status, 403, JSON.stringify(body))
+  }
+  assert.equal(calls.length, 2)
 })
 
-test("OpenAI image and video endpoints are allowed, other paths are not", async () => {
-  const allowed = [
-    ["POST", "/v1/images/generations"],
-    ["POST", "/v1/images/edits"],
-    ["POST", "/v1/videos"],
-    ["GET", "/v1/videos/video_123"],
-    ["GET", "/v1/videos/video_123/content"],
-  ]
-  for (const [method, path] of allowed) {
-    const calls = capture()
-    const res = await proxy(new Request(`https://x/api/openai${path}`, { method, headers: { "x-app-passcode": "open sesame" }, body: method === "POST" ? "{}" : undefined }), openai, env(keys))
-    assert.equal(res.status, 200, path)
-    assert.equal(calls.length, 1)
-  }
-  for (const [method, path] of [["DELETE", "/v1/videos/video_123"], ["GET", "/v1/files"], ["POST", "/v1/videos/video_123/remix"]]) {
-    const calls = capture()
-    const res = await proxy(new Request(`https://x/api/openai${path}`, { method, headers: { "x-app-passcode": "open sesame" } }), openai, env(keys))
-    assert.equal(res.status, 404, path)
-    assert.equal(calls.length, 0)
-  }
+test("without any key the user is asked to add one", async () => {
+  const calls = capture()
+  const res = await proxy(chat({ model: "openrouter/free" }), openrouter, env({}))
+  assert.equal(res.status, 401)
+  assert.equal(calls.length, 0)
 })
 
-test("the server key goes to Netlify AI Gateway when its base URL is set, a user's key never does", async () => {
+test("an optional server passcode guards the site's key", async () => {
   const calls = capture()
-  const gateway = { ...keys, ANTHROPIC_BASE_URL: "https://site.netlify.app/.netlify/ai/", OPENAI_BASE_URL: "https://site.netlify.app/.netlify/ai" }
-  await proxy(new Request("https://x/api/anthropic/v1/messages", { method: "POST", headers: { "x-app-passcode": "open sesame" }, body: "{}" }), anthropic, env(gateway))
-  await proxy(new Request("https://x/api/openai/v1/responses", { method: "POST", headers: { "x-app-passcode": "open sesame" }, body: "{}" }), openai, env(gateway))
-  await proxy(new Request("https://x/api/anthropic/v1/messages", { method: "POST", headers: { "x-api-key": "sk-ant-mine" }, body: "{}" }), anthropic, env(gateway))
-  assert.deepEqual(
-    calls.map((c) => c.url),
-    ["https://site.netlify.app/.netlify/ai/v1/messages", "https://site.netlify.app/.netlify/ai/v1/responses", "https://api.anthropic.com/v1/messages"],
-  )
+  const vars = { ...server, APP_PASSCODE: "open sesame" }
+  assert.equal((await proxy(chat({ model: "openrouter/free" }), openrouter, env(vars))).status, 401)
+  assert.equal((await proxy(chat({ model: "openrouter/free" }, { "x-app-passcode": "open sesame" }), openrouter, env(vars))).status, 200)
+  // A user's own key doesn't need it.
+  assert.equal((await proxy(chat({ model: "openrouter/free" }, { authorization: "Bearer sk-or-mine" }), openrouter, env(vars))).status, 200)
+  assert.equal(calls.length, 2)
+})
 
-  // The gateway needs a JSON content type even on GETs, which the SDKs send without one.
-  await proxy(new Request("https://x/api/openai/v1/models", { headers: { "x-app-passcode": "open sesame" } }), openai, env(gateway))
-  assert.equal(new Headers(calls[3].init.headers).get("content-type"), "application/json")
+test("the model list needs no key; other paths are blocked", async () => {
+  const calls = capture()
+  const res = await proxy(new Request("https://site.app/api/openrouter/v1/models"), openrouter, env({}))
+  assert.equal(res.status, 200)
+  assert.equal(new Headers(calls[0].init.headers).get("authorization"), null)
+  for (const [method, path] of [["GET", "/v1/key"], ["POST", "/v1/completions"], ["GET", "/v1/credits"]]) {
+    const blocked = await proxy(new Request(`https://site.app/api/openrouter${path}`, { method, headers: { authorization: "Bearer sk-or-mine" } }), openrouter, env(server))
+    assert.equal(blocked.status, 404, path)
+  }
+  assert.equal(calls.length, 1)
+})
+
+test("free model detection", () => {
+  assert.ok(isFreeModel("nvidia/nemotron-3-ultra-550b-a55b:free"))
+  assert.ok(isFreeModel("openrouter/free"))
+  assert.ok(!isFreeModel("openrouter/auto"))
+  assert.ok(!isFreeModel("meta/free-model"))
+  assert.ok(!isFreeModel(undefined))
 })

@@ -1,28 +1,15 @@
-// Builds each provider's request history from a conversation. Kept free of SDK and DOM
+// Builds the chat-completions message list from a conversation. Kept free of SDK and DOM
 // code so it can be unit tested.
 import type { Attachment, ModelRef, Reply, Turn } from "./types"
 
 function usable(reply: Reply) {
-  return (reply.status === "done" || reply.status === "stopped") && (reply.text.trim() !== "" || reply.raw !== undefined || !!reply.media?.id)
+  return (reply.status === "done" || reply.status === "stopped") && reply.text.trim() !== ""
 }
 
-/** How a generated image or video appears in a later request's history. */
-export function replyText(reply: Reply) {
-  if (reply.media?.id) return `[Generated ${reply.media.kind}: "${reply.media.prompt}"]`
-  return reply.text
-}
-
-/**
- * The earlier reply a model should see for a turn: its own if it answered (compare mode),
- * otherwise one from the same provider, otherwise whichever answered first.
- */
+/** The earlier reply a model should see for a turn: its own if it answered (compare mode), otherwise the first. */
 export function pickReply(turn: Turn, target: ModelRef) {
   const replies = turn.replies.filter(usable)
-  return (
-    replies.find((r) => r.model.provider === target.provider && r.model.id === target.id) ??
-    replies.find((r) => r.model.provider === target.provider) ??
-    replies[0]
-  )
+  return replies.find((r) => r.model.id === target.id) ?? replies[0]
 }
 
 function decodeText(data: string) {
@@ -34,77 +21,35 @@ export function isImage(a: Attachment) {
   return a.mediaType.startsWith("image/")
 }
 
-export function isPdf(a: Attachment) {
-  return a.mediaType === "application/pdf"
-}
-
-/** Text files are inlined into the prompt so both providers read them the same way. */
+/** Text files are inlined into the prompt. */
 export function promptText(turn: Turn) {
-  const files = turn.attachments
-    .filter((a) => !isImage(a) && !isPdf(a))
-    .map((a) => `<file name="${a.name}">\n${decodeText(a.data)}\n</file>`)
+  const files = turn.attachments.filter((a) => !isImage(a)).map((a) => `<file name="${a.name}">\n${decodeText(a.data)}\n</file>`)
   return [...files, turn.text].filter((part) => part.trim() !== "").join("\n\n")
 }
 
-type AnthropicBlock = Record<string, unknown>
-export interface AnthropicMessage {
-  role: "user" | "assistant"
-  content: AnthropicBlock[]
-}
-
-function anthropicUser(turn: Turn): AnthropicBlock[] {
-  const blocks: AnthropicBlock[] = []
-  for (const a of turn.attachments) {
-    if (isImage(a)) blocks.push({ type: "image", source: { type: "base64", media_type: a.mediaType, data: a.data } })
-    if (isPdf(a)) blocks.push({ type: "document", source: { type: "base64", media_type: a.mediaType, data: a.data }, title: a.name })
-  }
-  const text = promptText(turn)
-  if (text) blocks.push({ type: "text", text })
-  return blocks
-}
-
-export function anthropicMessages(history: Turn[], current: Turn, target: ModelRef): AnthropicMessage[] {
-  const out: AnthropicMessage[] = []
-  const push = (role: AnthropicMessage["role"], content: AnthropicBlock[]) => {
-    const last = out[out.length - 1]
-    // A turn whose reply failed leaves two user messages in a row; merge them.
-    if (last && last.role === role) last.content.push(...content)
-    else out.push({ role, content })
-  }
-  for (const turn of history) {
-    push("user", anthropicUser(turn))
-    const reply = pickReply(turn, target)
-    if (!reply) continue
-    // Claude's own blocks go back unchanged so its earlier thinking stays valid.
-    if (reply.model.provider === "anthropic" && reply.raw) push("assistant", reply.raw as AnthropicBlock[])
-    else push("assistant", [{ type: "text", text: replyText(reply) }])
-  }
-  push("user", anthropicUser(current))
-  return out
-}
-
-export type OpenAIInput =
-  | { role: "user"; content: Record<string, unknown>[] }
+type Part = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }
+export type ChatMessage =
+  | { role: "system"; content: string }
+  | { role: "user"; content: string | Part[] }
   | { role: "assistant"; content: string }
 
-function openaiUser(turn: Turn): OpenAIInput {
-  const content: Record<string, unknown>[] = []
-  for (const a of turn.attachments) {
-    if (isImage(a)) content.push({ type: "input_image", image_url: `data:${a.mediaType};base64,${a.data}`, detail: "auto" })
-    if (isPdf(a)) content.push({ type: "input_file", filename: a.name, file_data: `data:${a.mediaType};base64,${a.data}` })
-  }
+function userMessage(turn: Turn): ChatMessage {
+  const images = turn.attachments.filter(isImage)
   const text = promptText(turn)
-  if (text) content.push({ type: "input_text", text })
-  return { role: "user", content }
+  // Plain string content when there are no images: every model accepts that.
+  if (!images.length) return { role: "user", content: text }
+  const parts: Part[] = images.map((a) => ({ type: "image_url", image_url: { url: `data:${a.mediaType};base64,${a.data}` } }))
+  if (text) parts.push({ type: "text", text })
+  return { role: "user", content: parts }
 }
 
-export function openaiInput(history: Turn[], current: Turn, target: ModelRef): OpenAIInput[] {
-  const out: OpenAIInput[] = []
+export function chatMessages(system: string, history: Turn[], current: Turn, target: ModelRef): ChatMessage[] {
+  const out: ChatMessage[] = system.trim() ? [{ role: "system", content: system.trim() }] : []
   for (const turn of history) {
-    out.push(openaiUser(turn))
+    out.push(userMessage(turn))
     const reply = pickReply(turn, target)
-    if (reply && replyText(reply).trim()) out.push({ role: "assistant", content: replyText(reply) })
+    if (reply) out.push({ role: "assistant", content: reply.text })
   }
-  out.push(openaiUser(current))
+  out.push(userMessage(current))
   return out
 }

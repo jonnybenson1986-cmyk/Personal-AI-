@@ -3,19 +3,19 @@ import { useRegisterSW } from "virtual:pwa-register/solid"
 import { InstallHelp, SettingsDialog, Unlock } from "./components/Dialogs"
 import { IconCompose, IconMenu } from "./components/icons"
 import { Canvas } from "./components/Canvas"
-import { Composer, type Draft } from "./components/Composer"
+import { Composer } from "./components/Composer"
 import { ModelPicker } from "./components/ModelPicker"
 import { Sidebar } from "./components/Sidebar"
 import { Thread } from "./components/Thread"
-import { refreshStatus, status } from "./lib/catalog"
+import { canChat, refreshStatus } from "./lib/catalog"
 import { checkPin } from "./lib/lock"
 import { activeConversation, loadConversations, loaded, newChat, settings, updateSettings } from "./lib/store"
 
-const SUGGESTIONS: Draft[] = [
-  { text: "Explain a tricky concept simply" },
-  { text: "Build a single-page HTML to-do app" },
-  { text: "A cozy cabin in snowy woods at dusk, warm light in the windows", mode: "image" },
-  { text: "Waves rolling onto a beach at sunrise, slow aerial shot", mode: "video" },
+const SUGGESTIONS = [
+  "Explain a tricky concept simply",
+  "Build a single-page HTML to-do app",
+  "Help me write a polite but firm email",
+  "Plan a 3-day trip to Lisbon",
 ]
 
 export function App() {
@@ -24,7 +24,7 @@ export function App() {
   const [sidebar, setSidebar] = createSignal(false)
   const [showSettings, setShowSettings] = createSignal(false)
   const [showInstall, setShowInstall] = createSignal(false)
-  const [draft, setDraft] = createSignal<Draft>()
+  const [draft, setDraft] = createSignal<string>()
 
   const {
     needRefresh: [needRefresh],
@@ -46,7 +46,7 @@ export function App() {
 
   onMount(() => void loadConversations())
 
-  const noKeys = () => !!status() && !status()!.anthropic && !status()!.openai
+  const noKeys = () => canChat() === false
 
   return (
     <>
@@ -87,12 +87,20 @@ export function App() {
                   fallback={
                     <div class="welcome">
                       <div class="setup">
-                        <h1>Add an API key to start</h1>
-                        <p class="muted">
-                          Paste an Anthropic key to chat with Claude, an OpenAI key for ChatGPT, or both. Keys are saved only on this device.
-                        </p>
+                        <h1>One step to start</h1>
+                        <p class="muted">Personal AI runs on free open models through OpenRouter. Get a free key, no card needed:</p>
+                        <ol class="steps setup-steps">
+                          <li>
+                            Sign up at{" "}
+                            <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer">
+                              openrouter.ai
+                            </a>
+                          </li>
+                          <li>Create an API key and copy it</li>
+                          <li>Paste it here in Settings</li>
+                        </ol>
                         <button class="button primary wide" onClick={() => setShowSettings(true)}>
-                          Add API keys
+                          Add your free key
                         </button>
                       </div>
                     </div>
@@ -104,11 +112,7 @@ export function App() {
                   <div class="suggestions">
                     <For each={SUGGESTIONS}>
                       {(s) => (
-                        <button onClick={() => setDraft({ ...s })}>
-                          {s.mode === "image" ? "🖼️ " : s.mode === "video" ? "🎬 " : ""}
-                          {s.mode ? `Create ${s.mode}: ` : ""}
-                          {s.text}
-                        </button>
+                        <button onClick={() => setDraft(s)}>{s}</button>
                       )}
                     </For>
                   </div>

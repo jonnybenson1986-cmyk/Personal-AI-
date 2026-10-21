@@ -1,100 +1,67 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { anthropicMessages, openaiInput, pickReply } from "../src/lib/history.ts"
+import { chatMessages, pickReply } from "../src/lib/history.ts"
+import { filterFreeModels } from "../src/lib/models.ts"
 import type { Reply, Turn } from "../src/lib/types.ts"
 
-const claude = { provider: "anthropic" as const, id: "claude-opus-5-5" }
-const sonnet = { provider: "anthropic" as const, id: "claude-sonnet-5-5" }
-const gpt = { provider: "openai" as const, id: "gpt-5" }
+const auto = { id: "openrouter/free" }
+const gemma = { id: "google/gemma-4-31b-it:free" }
 
 function reply(model: Reply["model"], text: string, extra: Partial<Reply> = {}): Reply {
-  return { id: text, model, text, thinking: "", sources: [], status: "done", createdAt: 0, ...extra }
+  return { id: text, model, text, thinking: "", status: "done", createdAt: 0, ...extra }
 }
 
 function turn(text: string, replies: Reply[] = []): Turn {
   return { id: text, text, attachments: [], replies, createdAt: 0 }
 }
 
-const rawBlocks = [
-  { type: "thinking", thinking: "hmm", signature: "sig" },
-  { type: "text", text: "claude answer" },
-]
-
-test("pickReply prefers the same model, then provider, then any", () => {
-  const t = turn("q", [reply(gpt, "g"), reply(sonnet, "s"), reply(claude, "c")])
-  assert.equal(pickReply(t, claude)?.text, "c")
-  assert.equal(pickReply(t, { provider: "anthropic", id: "claude-haiku-5-5" })?.text, "s")
-  assert.equal(pickReply(turn("q", [reply(claude, "c")]), gpt)?.text, "c")
+test("pickReply prefers the same model, then the first usable reply", () => {
+  const t = turn("q", [reply(auto, "a"), reply(gemma, "g")])
+  assert.equal(pickReply(t, gemma)?.text, "g")
+  assert.equal(pickReply(t, { id: "other:free" })?.text, "a")
+  assert.equal(pickReply(turn("q", [reply(auto, "", { status: "error" }), reply(gemma, "g")]), auto)?.text, "g")
+  assert.equal(pickReply(turn("q", [reply(auto, "partial", { status: "streaming" })]), auto), undefined)
 })
 
-test("pickReply skips failed and empty replies", () => {
-  const t = turn("q", [reply(claude, "", { status: "error", error: "x" }), reply(gpt, "g")])
-  assert.equal(pickReply(t, claude)?.text, "g")
-  assert.equal(pickReply(turn("q", [reply(claude, "partial", { status: "streaming" })]), claude), undefined)
-})
-
-test("Claude gets its own raw blocks back unchanged, other replies as text", () => {
-  const history = [turn("one", [reply(claude, "claude answer", { raw: rawBlocks })]), turn("two", [reply(gpt, "gpt answer")])]
-  const messages = anthropicMessages(history, turn("three"), claude)
-  assert.deepEqual(messages, [
-    { role: "user", content: [{ type: "text", text: "one" }] },
-    { role: "assistant", content: rawBlocks },
-    { role: "user", content: [{ type: "text", text: "two" }] },
-    { role: "assistant", content: [{ type: "text", text: "gpt answer" }] },
-    { role: "user", content: [{ type: "text", text: "three" }] },
+test("history alternates user and assistant, with the system prompt first", () => {
+  const history = [turn("one", [reply(auto, "first answer")]), turn("two", [reply(auto, "", { status: "error" })])]
+  assert.deepEqual(chatMessages("Be brief.", history, turn("three"), auto), [
+    { role: "system", content: "Be brief." },
+    { role: "user", content: "one" },
+    { role: "assistant", content: "first answer" },
+    { role: "user", content: "two" },
+    { role: "user", content: "three" },
   ])
+  assert.equal(chatMessages("  ", [], turn("hi"), auto)[0].role, "user")
 })
 
-test("the Claude history is identical on every turn (append-only)", () => {
-  const history = [turn("one", [reply(claude, "claude answer", { raw: rawBlocks })])]
-  const first = anthropicMessages(history, turn("two"), claude)
-  const second = anthropicMessages([...history, turn("two", [reply(claude, "b")])], turn("three"), claude)
-  assert.deepEqual(second.slice(0, first.length), first)
-})
-
-test("a failed turn merges into the next user message instead of breaking alternation", () => {
-  const history = [turn("one", [reply(claude, "", { status: "error" })])]
-  const messages = anthropicMessages(history, turn("two"), claude)
-  assert.deepEqual(messages, [{ role: "user", content: [{ type: "text", text: "one" }, { type: "text", text: "two" }] }])
-})
-
-test("attachments map to each provider's format", () => {
+test("images become image parts, text files are inlined", () => {
   const png = { id: "a", name: "a.png", mediaType: "image/png", data: "AAAA" }
-  const pdf = { id: "b", name: "b.pdf", mediaType: "application/pdf", data: "BBBB" }
   const txt = { id: "c", name: "c.txt", mediaType: "text/plain", data: Buffer.from("hello file").toString("base64") }
-  const current: Turn = { ...turn("look"), attachments: [png, pdf, txt] }
-  const [claudeMsg] = anthropicMessages([], current, claude)
-  assert.deepEqual(claudeMsg.content, [
-    { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } },
-    { type: "document", source: { type: "base64", media_type: "application/pdf", data: "BBBB" }, title: "b.pdf" },
-    { type: "text", text: '<file name="c.txt">\nhello file\n</file>\n\nlook' },
-  ])
-  const [gptMsg] = openaiInput([], current, gpt)
-  assert.deepEqual(gptMsg, {
-    role: "user",
-    content: [
-      { type: "input_image", image_url: "data:image/png;base64,AAAA", detail: "auto" },
-      { type: "input_file", filename: "b.pdf", file_data: "data:application/pdf;base64,BBBB" },
-      { type: "input_text", text: '<file name="c.txt">\nhello file\n</file>\n\nlook' },
-    ],
-  })
-})
-
-test("OpenAI history uses plain text for every reply", () => {
-  const history = [turn("one", [reply(claude, "claude answer", { raw: rawBlocks }), reply(gpt, "gpt answer")])]
-  assert.deepEqual(openaiInput(history, turn("two"), gpt), [
-    { role: "user", content: [{ type: "input_text", text: "one" }] },
-    { role: "assistant", content: "gpt answer" },
-    { role: "user", content: [{ type: "input_text", text: "two" }] },
+  const current: Turn = { ...turn("look"), attachments: [png, txt] }
+  assert.deepEqual(chatMessages("", [], current, gemma), [
+    {
+      role: "user",
+      content: [
+        { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+        { type: "text", text: '<file name="c.txt">\nhello file\n</file>\n\nlook' },
+      ],
+    },
   ])
 })
 
-test("generated images appear in later history as a short description", () => {
-  const image = reply({ provider: "openai", id: "gpt-image-2" }, "", { media: { kind: "image", prompt: "a red fox", id: "m1" } })
-  const history = [turn("a red fox", [image])]
-  assert.deepEqual(anthropicMessages(history, turn("make it blue"), claude)[1], {
-    role: "assistant",
-    content: [{ type: "text", text: '[Generated image: "a red fox"]' }],
-  })
-  assert.deepEqual(openaiInput(history, turn("make it blue"), gpt)[1], { role: "assistant", content: '[Generated image: "a red fox"]' })
+test("only free chat models make the picker, with Auto first", () => {
+  const models = filterFreeModels([
+    { id: "google/gemma-4-31b-it:free", name: "Google: Gemma 4 31B (free)", context_length: 262144, pricing: { prompt: "0", completion: "0" }, architecture: { input_modalities: ["image", "text"] } },
+    { id: "google/gemma-4-31b-it", name: "Google: Gemma 4 31B", pricing: { prompt: "0.0000001", completion: "0.0000002" } },
+    { id: "nvidia/nemotron-3.5-content-safety:free", name: "Safety (free)", pricing: { prompt: "0", completion: "0" } },
+    { id: "odd/model:free", name: "Odd (free)", pricing: { prompt: "0.1", completion: "0" } },
+  ])
+  assert.deepEqual(
+    models.map((m) => m.id),
+    ["openrouter/free", "google/gemma-4-31b-it:free"],
+  )
+  assert.equal(models[1].label, "Google Gemma 4 31B")
+  assert.equal(models[1].hint, "Sees images · 262K context")
+  assert.deepEqual(filterFreeModels([]), [])
 })
