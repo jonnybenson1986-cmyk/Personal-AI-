@@ -3,7 +3,7 @@ import { createSignal } from "solid-js"
 import { del, get, set } from "idb-keyval"
 import { DEFAULT_SELECTION } from "./models"
 import { errorMessage, isAbort, streamReply } from "./providers"
-import type { Attachment, Conversation, ModelRef, Reply, Settings, Turn } from "./types"
+import type { Attachment, Conversation, ModelRef, RepoTarget, Reply, Settings, Turn } from "./types"
 
 const SETTINGS_KEY = "personal-ai:settings"
 const INDEX_KEY = "conversations"
@@ -62,15 +62,19 @@ const pending = new Map<string, number>()
 function persist(id: string) {
   // Streaming updates many times a second; write at most a few times a second.
   if (pending.has(id)) return
-  pending.set(
-    id,
-    window.setTimeout(() => {
-      pending.delete(id)
-      const conv = conversations.find((c) => c.id === id)
-      if (conv) void set(convKey(id), JSON.parse(JSON.stringify(conv)))
-    }, 400),
-  )
+  pending.set(id, window.setTimeout(() => save(id), 400))
 }
+
+function save(id: string) {
+  clearTimeout(pending.get(id))
+  pending.delete(id)
+  const conv = conversations.find((c) => c.id === id)
+  return conv ? set(convKey(id), JSON.parse(JSON.stringify(conv))) : Promise.resolve()
+}
+
+// Write anything still waiting when the app is hidden or closed.
+addEventListener("pagehide", () => [...pending.keys()].forEach((id) => void save(id)))
+document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && [...pending.keys()].forEach((id) => void save(id)))
 
 function persistIndex() {
   void set(INDEX_KEY, conversations.map((c) => c.id))
@@ -126,7 +130,7 @@ function titleFrom(text: string, attachments: Attachment[]) {
 }
 
 /** Sends a message: starts a chat if needed, then streams one reply per selected model. */
-export function send(text: string, attachments: Attachment[], tool?: string) {
+export function send(text: string, attachments: Attachment[], tool?: string, repo?: RepoTarget) {
   let id = activeId()
   if (!id) {
     const now = Date.now()
@@ -144,12 +148,31 @@ export function send(text: string, attachments: Attachment[], tool?: string) {
     persistIndex()
     id = conv.id
   }
-  const turn: Turn = { id: uid(), tool, text, attachments, replies: [], createdAt: Date.now() }
+  const conv = conversations.find((c) => c.id === id)!
+  // A repo stays connected for the rest of the chat once added.
+  const target = repo ?? conv.repo
+  const turn: Turn = { id: uid(), tool, repo: target && { ...target }, text, attachments, replies: [], createdAt: Date.now() }
   mutate(id, (c) => {
     c.models = settings.models.map((m) => ({ ...m }))
+    if (target) c.repo = { ...target }
     c.turns.push(turn)
   })
   answer(id, turn.id)
+}
+
+export function markPushed(convId: string, replyId: string, pushed: NonNullable<Reply["pushed"]>) {
+  mutate(convId, (c) => {
+    for (const t of c.turns) for (const r of t.replies) if (r.id === replyId) r.pushed = pushed
+  })
+  // Saved straight away so the push card can't come back and push twice.
+  return save(convId)
+}
+
+/** Stops later messages in this chat being about the connected repo. */
+export function disconnectRepo(convId: string) {
+  mutate(convId, (c) => {
+    c.repo = undefined
+  })
 }
 
 /** Edits a past message: later turns are dropped and the message is answered again. */

@@ -1,7 +1,7 @@
 import { createMemo, createSignal, For, Show } from "solid-js"
 import { type Repo, loadRepo, parseRepo, readable, repoAttachments, suggested } from "../lib/github"
 import { settings, updateSettings } from "../lib/store"
-import type { Attachment } from "../lib/types"
+import type { Attachment, RepoTarget } from "../lib/types"
 import { readPage } from "../lib/web"
 import { Modal } from "./Dialogs"
 
@@ -12,7 +12,7 @@ function kb(bytes: number) {
 }
 
 /** Connect a GitHub repo, pick files, and add them to the next message. */
-export function GitHubDialog(props: { onClose: () => void; onAdd: (files: Attachment[]) => void }) {
+export function GitHubDialog(props: { onClose: () => void; onAdd: (files: Attachment[], repo: RepoTarget) => void }) {
   const [input, setInput] = createSignal(settings.recentRepos[0] ?? "")
   const [repo, setRepo] = createSignal<Repo>()
   const [busy, setBusy] = createSignal(false)
@@ -59,7 +59,8 @@ export function GitHubDialog(props: { onClose: () => void; onAdd: (files: Attach
     setBusy(true)
     setError(undefined)
     try {
-      props.onAdd(await repoAttachments(repo()!, [...picked()], includeMap(), settings.githubToken))
+      const r = repo()!
+      props.onAdd(await repoAttachments(r, [...picked()], includeMap(), settings.githubToken), { owner: r.owner, repo: r.repo, ref: r.ref })
       props.onClose()
     } catch (e) {
       setError((e as Error).message)

@@ -28,11 +28,22 @@ export interface Reply {
   thinking: string
   status: ReplyStatus
   error?: string
+  /** Set once this reply's file changes were pushed to GitHub. */
+  pushed?: { commitUrl: string; branchUrl: string; branch: string; pullRequestUrl?: string }
   createdAt: number
+}
+
+export interface RepoTarget {
+  owner: string
+  repo: string
+  /** Branch the files were read from. */
+  ref?: string
 }
 
 export interface Turn {
   id: string
+  /** The GitHub repo this message is about; the AI is asked to give pushable files. */
+  repo?: RepoTarget
   /** AI tool from the + menu, e.g. "summarize". */
   tool?: string
   text: string
@@ -48,6 +59,8 @@ export interface Conversation {
   system: string
   /** One model for a normal chat, two for side-by-side compare. */
   models: ModelRef[]
+  /** The GitHub repo connected to this chat, if any. */
+  repo?: RepoTarget
   turns: Turn[]
   createdAt: number
   updatedAt: number

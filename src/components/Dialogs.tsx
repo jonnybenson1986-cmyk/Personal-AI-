@@ -73,8 +73,8 @@ export function SettingsDialog(props: { onClose: () => void }) {
         Status: <strong>{canChat() ? "ready" : "add a key to start"}</strong>
       </p>
       <KeyField
-        label="GitHub token (optional)"
-        hint="Only for private repos or heavy use. github.com → Settings → Developer settings → Fine-grained tokens, with read access to contents."
+        label="GitHub token"
+        hint="Needed to push changes, and for private repos. github.com → Settings → Developer settings → Fine-grained tokens → choose your repos → Permissions: Contents and Pull requests set to Read and write. Saved only on this device."
         placeholder="github_pat_…"
         value={settings.githubToken}
         onSave={(githubToken) => updateSettings({ githubToken })}

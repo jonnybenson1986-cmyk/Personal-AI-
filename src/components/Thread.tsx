@@ -6,6 +6,7 @@ import { fileExtension, renderMarkdown } from "../lib/markdown"
 import { modelLabel } from "../lib/models"
 import { editAndResend, isStreaming, regenerate } from "../lib/store"
 import { findTool } from "../lib/tools"
+import { PushCard } from "./PushCard"
 import type { Conversation, Reply, Turn } from "../lib/types"
 import { IconCheck, IconCopy, IconEdit, IconFile, IconRefresh } from "./icons"
 
@@ -50,7 +51,7 @@ function Markdown(props: { text: string }) {
   return <div class="markdown" innerHTML={html()} />
 }
 
-function ReplyView(props: { reply: Reply; last: boolean; convId: string; compare: boolean }) {
+function ReplyView(props: { reply: Reply; last: boolean; convId: string; compare: boolean; turn: Turn }) {
   const r = () => props.reply
   const [showThinking, setShowThinking] = createSignal(false)
   const thinkingActive = () => r().status === "streaming" && r().thinking !== "" && r().text === ""
@@ -85,6 +86,7 @@ function ReplyView(props: { reply: Reply; last: boolean; convId: string; compare
       <Show when={r().text}>
         <Markdown text={r().text} />
       </Show>
+      <PushCard reply={r()} repo={props.turn.repo} convId={props.convId} />
       <Show when={r().error}>
         <div class={r().status === "error" ? "notice error" : "notice"}>{r().error}</div>
       </Show>
@@ -173,7 +175,7 @@ function TurnView(props: { turn: Turn; last: boolean; conv: Conversation }) {
         </Show>
       </div>
       <div class={compare() ? "replies compare" : "replies"}>
-        <For each={props.turn.replies}>{(reply) => <ReplyView reply={reply} last={props.last} convId={props.conv.id} compare={compare()} />}</For>
+        <For each={props.turn.replies}>{(reply) => <ReplyView reply={reply} last={props.last} convId={props.conv.id} compare={compare()} turn={props.turn} />}</For>
       </div>
       <Show when={props.last && compare() && !isStreaming(props.conv.id)}>
         <div class="compare-actions">
@@ -222,7 +224,7 @@ export function Thread(props: { conv: Conversation }) {
         const lang = block.dataset.lang ?? ""
         const action = button.dataset.action
         if (action === "preview") setCanvas({ title: props.conv.title, lang, code })
-        if (action === "download") download(`code.${fileExtension(lang)}`, code)
+        if (action === "download") download(block.dataset.path?.split("/").pop() || `code.${fileExtension(lang)}`, code)
         if (action === "copy") {
           await navigator.clipboard.writeText(code)
           button.textContent = "Copied"

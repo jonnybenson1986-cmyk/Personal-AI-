@@ -1,6 +1,6 @@
 // Builds the chat-completions message list from a conversation. Kept free of SDK and DOM
 // code so it can be unit tested.
-import { findTool } from "./tools.ts"
+import { EDIT_FORMAT, findTool } from "./tools.ts"
 import type { Attachment, ModelRef, Reply, Turn } from "./types"
 
 function usable(reply: Reply) {
@@ -25,8 +25,12 @@ export function isImage(a: Attachment) {
 /** Text files are inlined into the prompt, after the AI tool's instruction if one was picked. */
 export function promptText(turn: Turn) {
   const files = turn.attachments.filter((a) => !isImage(a)).map((a) => `<file name="${a.name}">\n${decodeText(a.data)}\n</file>`)
-  const instruction = findTool(turn.tool)?.instruction ?? ""
-  return [instruction, ...files, turn.text].filter((part) => part.trim() !== "").join("\n\n")
+  const tool = findTool(turn.tool)
+  // A connected repo means answers may include files to push, so ask for the pushable format.
+  const repo = turn.repo
+    ? `This is about the GitHub repository ${turn.repo.owner}/${turn.repo.repo}${turn.repo.ref ? ` (branch ${turn.repo.ref})` : ""}.${tool?.id === "repo" ? "" : " " + EDIT_FORMAT}`
+    : ""
+  return [repo, tool?.instruction ?? "", ...files, turn.text].filter((part) => part.trim() !== "").join("\n\n")
 }
 
 type Part = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }

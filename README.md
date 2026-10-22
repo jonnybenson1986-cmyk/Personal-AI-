@@ -8,7 +8,8 @@ A personal AI chat, coding and research app that runs on **free open models** (G
   - **Photos & files** or **Take a photo**: images and text files.
   - **GitHub repo**: connect any repo, browse its files, and add the ones you want, plus an outline of the whole project. Private repos work with an optional GitHub token in Settings.
   - **Web page**: paste a link and the page's text is added for the AI to read.
-  - **AI tools**: Think longer, Write code, Summarize, Translate, Explain simply, Brainstorm, Improve writing.
+  - **AI tools**: Think longer, Write code, Edit a GitHub repo, Summarize, Translate, Explain simply, Brainstorm, Improve writing.
+- **Edit and push to GitHub:** connect a repo (or pick "Edit a GitHub repo"), ask for a change, and the AI writes complete files. A card under the reply shows each file as new or changed (+/− lines). One tap pushes them to GitHub in a single commit: on a new branch with a pull request (the default), or straight to `main`. Pushing never force-pushes, so if the branch changed meanwhile it stops instead of overwriting.
 - Streaming answers, the model's thought process where it shares one, Markdown and code highlighting.
 - **Code canvas:** preview HTML/SVG the AI writes, then copy or download it.
 - Edit a past message, regenerate an answer, or stop a reply mid-stream.
@@ -25,6 +26,17 @@ The app needs a free OpenRouter key. No card or payment is required.
 The key is saved only on your device.
 
 **Optional: put the key on Netlify instead,** so the app works on every device without pasting it. Add `OPENROUTER_API_KEY` under **Site configuration → Environment variables**, then redeploy. The site's key only ever reaches free models, because the proxy blocks paid models and paid plugins, so it can't cost you money. Anyone who opens the site can use its free daily messages.
+
+### Pushing to GitHub
+
+Pushing needs a GitHub token, saved only on your device:
+
+1. Go to github.com → **Settings → Developer settings → Fine-grained tokens → Generate new token**.
+2. Under **Repository access**, choose the repos the app may change.
+3. Under **Permissions**, set **Contents** and **Pull requests** to **Read and write**.
+4. Paste the token in the app under **Settings → GitHub token**.
+
+If the repo is this site's own repo, anything pushed to `main` goes live on Netlify, so the default is a branch plus pull request: review it on GitHub, then merge.
 
 ### Free model limits
 
@@ -50,7 +62,9 @@ Browser (SolidJS PWA)
 | `src/lib/models.ts` | Picks the free chat models out of OpenRouter's list |
 | `src/lib/store.ts` | Chats, streaming state, IndexedDB persistence |
 | `src/components/` | Sidebar, model picker, thread, composer, canvas, settings |
-| `src/lib/github.ts`, `src/lib/web.ts`, `src/lib/tools.ts` | GitHub repo reader, web page reader, AI tools |
+| `src/lib/github.ts` | Reads repos; pushes files as one commit (branch, pull request) |
+| `src/lib/changes.ts` | Finds complete files in a reply (unit tested) |
+| `src/lib/web.ts`, `src/lib/tools.ts` | Web page reader, AI tools |
 | `netlify/edge-functions/` | `openrouter` proxy, `read` (web pages) and `status` |
 | `netlify/shared/proxy.ts` | Path allowlist and free-model guard for the site key |
 | `netlify/shared/read.ts` | Fetches public web pages and turns them into text |

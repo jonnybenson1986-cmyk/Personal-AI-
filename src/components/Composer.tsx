@@ -2,9 +2,9 @@ import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid
 import { Portal } from "solid-js/web"
 import { ACCEPT, readFile } from "../lib/files"
 import { isImage } from "../lib/history"
-import { activeId, isStreaming, send, stop } from "../lib/store"
+import { activeConversation, activeId, disconnectRepo, isStreaming, send, stop } from "../lib/store"
 import { AI_TOOLS, findTool } from "../lib/tools"
-import type { Attachment } from "../lib/types"
+import type { Attachment, RepoTarget } from "../lib/types"
 import { GitHubDialog, WebPageDialog } from "./AddDialogs"
 import { IconCamera, IconFile, IconGitHub, IconImage, IconLink, IconPlus, IconSend, IconSparkle, IconStop, IconX } from "./icons"
 
@@ -17,6 +17,9 @@ export function Composer(props: { autofocus?: boolean; draft?: () => string | un
   const [menuPlace, setMenuPlace] = createSignal({ down: false, max: 520 })
   const [tool, setTool] = createSignal<string>()
   const [dialog, setDialog] = createSignal<"github" | "web">()
+  // A repo picked for the next message; once sent it stays connected to the chat.
+  const [pendingRepo, setPendingRepo] = createSignal<RepoTarget>()
+  const connected = () => pendingRepo() ?? activeConversation()?.repo
   let input!: HTMLTextAreaElement
   let picker!: HTMLInputElement
   let camera!: HTMLInputElement
@@ -74,10 +77,11 @@ export function Composer(props: { autofocus?: boolean; draft?: () => string | un
 
   function submit() {
     if (!canSend()) return
-    send(text().trim(), files(), tool())
+    send(text().trim(), files(), tool(), pendingRepo())
     setText("")
     setFiles([])
     setTool(undefined)
+    setPendingRepo(undefined)
     setError(undefined)
     queueMicrotask(resize)
   }
@@ -201,6 +205,20 @@ export function Composer(props: { autofocus?: boolean; draft?: () => string | un
         </div>
         <input ref={picker} type="file" multiple accept={ACCEPT} hidden onChange={(e) => e.currentTarget.files && void add(e.currentTarget.files).then(() => (picker.value = ""))} />
         <input ref={camera} type="file" accept="image/*" capture="environment" hidden onChange={(e) => e.currentTarget.files && void add(e.currentTarget.files).then(() => (camera.value = ""))} />
+        <Show when={connected()}>
+          {(r) => (
+            <button
+              type="button"
+              class="chip on repo-chip"
+              title="Disconnect this repo from the chat"
+              onClick={() => (pendingRepo() ? setPendingRepo(undefined) : disconnectRepo(activeId()!))}
+            >
+              <IconGitHub />
+              <span>{r().repo}</span>
+              <IconX />
+            </button>
+          )}
+        </Show>
         <Show when={tool()}>
           <button type="button" class="chip on" title="Remove tool" onClick={() => setTool(undefined)}>
             <IconSparkle />
@@ -226,7 +244,13 @@ export function Composer(props: { autofocus?: boolean; draft?: () => string | un
       <Show when={dialog()}>
         <Portal>
           <Show when={dialog() === "github"} fallback={<WebPageDialog onClose={() => setDialog(undefined)} onAdd={(list) => setFiles((f) => [...f, ...list])} />}>
-            <GitHubDialog onClose={() => setDialog(undefined)} onAdd={(list) => setFiles((f) => [...f, ...list])} />
+            <GitHubDialog
+              onClose={() => setDialog(undefined)}
+              onAdd={(list, repo) => {
+                setFiles((f) => [...f, ...list])
+                setPendingRepo(repo)
+              }}
+            />
           </Show>
         </Portal>
       </Show>

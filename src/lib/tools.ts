@@ -10,6 +10,10 @@ export interface AiTool {
   reasoning?: boolean
 }
 
+/** How the AI should write file changes so the app can push them to GitHub. */
+export const EDIT_FORMAT =
+  "When you create or change files, give each one in full (never a partial snippet or a diff) in its own fenced code block, with the language and the file's path from the repository root on the opening line, like ```ts path=src/app.ts. Only include files you changed or created. After the files, give a one-line summary of the change that could serve as a commit message."
+
 export const AI_TOOLS: AiTool[] = [
   { id: "think", label: "Think longer", hint: "More careful answers to hard questions", reasoning: true },
   {
@@ -18,6 +22,12 @@ export const AI_TOOLS: AiTool[] = [
     hint: "Working code with short explanations",
     instruction:
       "Act as an expert programmer. Write complete, working code in fenced code blocks with the language named. For a web page, give one self-contained HTML file. Explain briefly after the code.",
+  },
+  {
+    id: "repo",
+    label: "Edit a GitHub repo",
+    hint: "Changes you can push to GitHub",
+    instruction: "Act as an expert programmer working on the user's code. " + EDIT_FORMAT,
   },
   { id: "summarize", label: "Summarize", hint: "Key points of text, a page or files", instruction: "Summarize the following clearly: start with a one-sentence overview, then the key points as bullets." },
   {

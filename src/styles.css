@@ -1678,3 +1678,110 @@ button:disabled {
   color: var(--accent-ai);
   font-weight: 600;
 }
+
+.repo-chip span {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-bar {
+  flex-wrap: wrap;
+}
+
+/* Push to GitHub */
+
+.push-card {
+  margin: 10px 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: var(--surface);
+}
+
+.push-head,
+.push-done {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.push-done a {
+  color: #2f7fd8;
+}
+
+.small-button {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.push-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.push-files {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.push-preview {
+  max-height: 260px;
+  overflow: auto;
+  margin: 4px 8px 8px;
+  padding: 10px;
+  font: 12px/1.5 var(--mono);
+  background: var(--code-bg);
+  border-radius: 8px;
+}
+
+.badge-new {
+  color: var(--chatgpt);
+  font-weight: 600;
+}
+
+.plus {
+  color: var(--chatgpt);
+}
+
+.minus {
+  color: var(--danger);
+}
+
+.push-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 14px;
+}
+
+.push-mode label {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.push-mode input[type="radio"] {
+  margin-top: 4px;
+}
+
+.branch-input {
+  margin: 0 0 4px 24px;
+  width: calc(100% - 24px);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.push-head svg,
+.push-done svg {
+  flex-shrink: 0;
+}
