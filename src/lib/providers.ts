@@ -1,7 +1,7 @@
 // Talks to OpenRouter's OpenAI-compatible API through the edge proxy, using the official
 // `openai` SDK, and normalizes the stream into StreamEvents.
 import OpenAI from "openai"
-import { chatMessages } from "./history"
+import { type ChatMessage, chatMessages } from "./history"
 import { filterFreeModels, type OpenRouterModel } from "./models"
 import { findTool } from "./tools"
 import type { Conversation, ModelInfo, ModelRef, StreamEvents, StreamResult, Turn } from "./types"
@@ -44,13 +44,32 @@ interface Chunk {
 }
 
 export async function streamReply(req: StreamRequest): Promise<StreamResult> {
+  return streamChat({
+    messages: chatMessages(req.conversation.system, req.history, req.current, req.model),
+    model: req.model,
+    credentials: req.credentials,
+    signal: req.signal,
+    events: req.events,
+    // OpenRouter's reasoning control; models that don't reason ignore it.
+    reasoning: !!findTool(req.current.tool)?.reasoning,
+  })
+}
+
+/** Streams one chat completion from OpenRouter. */
+export async function streamChat(req: {
+  messages: ChatMessage[]
+  model: ModelRef
+  credentials: Credentials
+  signal: AbortSignal
+  events: StreamEvents
+  reasoning?: boolean
+}): Promise<StreamResult> {
   const stream = await client(req.credentials).chat.completions.create(
     {
       model: req.model.id,
-      messages: chatMessages(req.conversation.system, req.history, req.current, req.model) as OpenAI.Chat.ChatCompletionMessageParam[],
+      messages: req.messages as OpenAI.Chat.ChatCompletionMessageParam[],
       stream: true,
-      // OpenRouter's reasoning control; models that don't reason ignore it.
-      ...(findTool(req.current.tool)?.reasoning ? { reasoning: { effort: "high" } } : {}),
+      ...(req.reasoning ? { reasoning: { effort: "high" } } : {}),
     } as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
     { signal: req.signal },
   )

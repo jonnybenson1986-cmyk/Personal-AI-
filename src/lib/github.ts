@@ -165,59 +165,127 @@ export interface PushResult {
   pullRequestUrl?: string
 }
 
+const repoPath = (t: RepoTarget) => `/repos/${t.owner}/${t.repo}`
+const refPath = (branch: string) => `heads/${branch.split("/").map(encodeURIComponent).join("/")}`
+
+/** The commit a branch points at, or undefined if the branch doesn't exist. */
+export async function branchHead(target: RepoTarget, branch: string, token: string) {
+  const res = await fetch(`https://api.github.com${repoPath(target)}/git/ref/${refPath(branch)}`, {
+    headers: { accept: "application/vnd.github+json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+  })
+  if (res.status === 404) return undefined
+  if (!res.ok) await api(`${repoPath(target)}/git/ref/${refPath(branch)}`, token)
+  return ((await res.json()) as { object: { sha: string } }).object.sha
+}
+
+export async function commitTree(target: RepoTarget, sha: string, token: string) {
+  return (await api<{ tree: { sha: string } }>(`${repoPath(target)}/git/commits/${sha}`, token)).tree.sha
+}
+
+/** Every file in a commit's tree, with sizes and modes. */
+export async function treeFiles(target: RepoTarget, treeSha: string, token: string) {
+  const tree = await api<{ tree: { path: string; type: string; size?: number; mode: string }[]; truncated: boolean }>(
+    `${repoPath(target)}/git/trees/${treeSha}?recursive=1`,
+    token,
+  )
+  return { files: tree.tree.filter((t) => t.type === "blob").map((t) => ({ path: t.path, size: t.size ?? 0, mode: t.mode })), truncated: tree.truncated }
+}
+
+export interface FileEdit {
+  path: string
+  /** New content, or null to delete the file. */
+  content: string | null
+}
+
+/**
+ * Creates a commit on GitHub without moving any branch (like a local `git commit`).
+ * `modes` keeps executable bits on files that have them.
+ */
+export async function createCommit(opts: {
+  target: RepoTarget
+  parent: string
+  parentTree: string
+  edits: FileEdit[]
+  message: string
+  token: string
+  modes?: Map<string, string>
+}) {
+  if (!opts.token) throw new Error("Add a GitHub token with write access in Settings to commit.")
+  const tree = await api<{ sha: string }>(`${repoPath(opts.target)}/git/trees`, opts.token, {
+    method: "POST",
+    body: {
+      base_tree: opts.parentTree,
+      tree: opts.edits.map((e) =>
+        e.content === null
+          ? { path: e.path, mode: "100644", type: "blob", sha: null }
+          : { path: e.path, mode: opts.modes?.get(e.path) === "100755" ? "100755" : "100644", type: "blob", content: e.content },
+      ),
+    },
+  })
+  const commit = await api<{ sha: string; html_url: string }>(`${repoPath(opts.target)}/git/commits`, opts.token, {
+    method: "POST",
+    body: { message: opts.message, tree: tree.sha, parents: [opts.parent] },
+  })
+  return { sha: commit.sha, tree: tree.sha, url: commit.html_url }
+}
+
+/** Points a branch at a commit: creates it, or fast-forwards it (never forced). */
+export async function moveBranch(target: RepoTarget, branch: string, sha: string, exists: boolean, token: string) {
+  if (exists) {
+    try {
+      await api(`${repoPath(target)}/git/refs/${refPath(branch)}`, token, { method: "PATCH", body: { sha, force: false } })
+    } catch (e) {
+      if (/fast forward|422/i.test((e as Error).message)) throw new Error(`The branch ${branch} has new commits on GitHub. Run "git pull" (with no local changes) and redo your edits, or push to a new branch.`)
+      throw e
+    }
+  } else await api(`${repoPath(target)}/git/refs`, token, { method: "POST", body: { ref: `refs/heads/${branch}`, sha } })
+}
+
+export async function openPullRequest(target: RepoTarget, opts: { head: string; base: string; title: string; body?: string }, token: string) {
+  const pr = await api<{ html_url: string; number: number }>(`${repoPath(target)}/pulls`, token, {
+    method: "POST",
+    body: { title: opts.title, head: opts.head, base: opts.base, body: [opts.body?.trim(), "Made with Jonny's AI project."].filter(Boolean).join("\n\n") },
+  })
+  return pr
+}
+
+export async function listBranches(target: RepoTarget, token: string) {
+  return (await api<{ name: string }[]>(`${repoPath(target)}/branches?per_page=100`, token)).map((b) => b.name)
+}
+
+export async function listCommits(target: RepoTarget, branch: string, token: string, count = 10) {
+  const commits = await api<{ sha: string; html_url: string; commit: { message: string; author: { name: string; date: string } } }[]>(
+    `${repoPath(target)}/commits?sha=${encodeURIComponent(branch)}&per_page=${count}`,
+    token,
+  )
+  return commits.map((c) => ({ sha: c.sha, url: c.html_url, message: c.commit.message, author: c.commit.author.name, date: c.commit.author.date }))
+}
+
 /**
  * Commits every file in one commit on top of the branch (or of `base` for a new branch),
  * then moves the branch to it. Never force-pushes: if the branch moved meanwhile, it fails.
  */
 export async function pushFiles(req: PushRequest): Promise<PushResult> {
   if (!req.token) throw new Error("Add a GitHub token with write access in Settings to push.")
-  const repo = `/repos/${req.target.owner}/${req.target.repo}`
-  const branchRef = `heads/${req.branch.split("/").map(encodeURIComponent).join("/")}`
-
-  let parent: string
-  let exists = true
-  try {
-    parent = (await api<{ object: { sha: string } }>(`${repo}/git/ref/${branchRef}`, req.token)).object.sha
-  } catch {
-    exists = false
-    parent = (await api<{ object: { sha: string } }>(`${repo}/git/ref/heads/${req.base.split("/").map(encodeURIComponent).join("/")}`, req.token)).object.sha
-  }
-  const parentCommit = await api<{ tree: { sha: string } }>(`${repo}/git/commits/${parent}`, req.token)
-
-  // Keep executable bits on files that already have them.
+  const existing = await branchHead(req.target, req.branch, req.token)
+  const parent = existing ?? (await branchHead(req.target, req.base, req.token))
+  if (!parent) throw new Error(`The branch ${req.base} wasn't found.`)
+  const parentTree = await commitTree(req.target, parent, req.token)
   const modes = new Map<string, string>()
   try {
-    const tree = await api<{ tree: { path: string; mode: string }[] }>(`${repo}/git/trees/${parentCommit.tree.sha}?recursive=1`, req.token)
-    for (const t of tree.tree) modes.set(t.path, t.mode)
+    for (const f of (await treeFiles(req.target, parentTree, req.token)).files) modes.set(f.path, f.mode)
   } catch {
     // A huge or odd tree: fall back to ordinary file mode.
   }
-
-  const tree = await api<{ sha: string }>(`${repo}/git/trees`, req.token, {
-    method: "POST",
-    body: {
-      base_tree: parentCommit.tree.sha,
-      tree: req.files.map((f) => ({ path: f.path, mode: modes.get(f.path) === "100755" ? "100755" : "100644", type: "blob", content: f.content })),
-    },
-  })
-  const commit = await api<{ sha: string; html_url: string }>(`${repo}/git/commits`, req.token, {
-    method: "POST",
-    body: { message: req.message, tree: tree.sha, parents: [parent] },
-  })
-  if (exists) await api(`${repo}/git/refs/${branchRef}`, req.token, { method: "PATCH", body: { sha: commit.sha, force: false } })
-  else await api(`${repo}/git/refs`, req.token, { method: "POST", body: { ref: `refs/heads/${req.branch}`, sha: commit.sha } })
-
+  const commit = await createCommit({ target: req.target, parent, parentTree, edits: req.files, message: req.message, token: req.token, modes })
+  await moveBranch(req.target, req.branch, commit.sha, !!existing, req.token)
   const result: PushResult = {
-    commitUrl: commit.html_url,
+    commitUrl: commit.url,
     branchUrl: `https://github.com/${req.target.owner}/${req.target.repo}/tree/${req.branch}`,
   }
   if (req.pullRequest && req.branch !== req.base) {
     const [title, ...rest] = req.message.split("\n")
-    const pr = await api<{ html_url: string }>(`${repo}/pulls`, req.token, {
-      method: "POST",
-      body: { title, head: req.branch, base: req.base, body: [rest.join("\n").trim(), "Made with Jonny's AI project."].filter(Boolean).join("\n\n") },
-    })
-    result.pullRequestUrl = pr.html_url
+    result.pullRequestUrl = (await openPullRequest(req.target, { head: req.branch, base: req.base, title, body: rest.join("\n") }, req.token)).html_url
   }
   return result
 }

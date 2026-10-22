@@ -10,6 +10,12 @@ A personal AI chat, coding and research app that runs on **free open models** (G
   - **Web page**: paste a link and the page's text is added for the AI to read.
   - **AI tools**: Think longer, Write code, Edit a GitHub repo, Summarize, Translate, Explain simply, Brainstorm, Improve writing.
 - **Edit and push to GitHub:** connect a repo (or pick "Edit a GitHub repo"), ask for a change, and the AI writes complete files. A card under the reply shows each file as new or changed (+/− lines). One tap pushes them to GitHub in a single commit: on a new branch with a pull request (the default), or straight to `main`. Pushing never force-pushes, so if the branch changed meanwhile it stops instead of overwriting.
+- **Code workspace** (Chat / Code switch in the sidebar): open any GitHub repo and work on it like a small IDE:
+  - **Files:** the repo as a folder tree; changed files are marked.
+  - **Editor:** syntax-highlighted editing (CodeMirror) for JS/TS, HTML, CSS, JSON, Markdown, Python and more.
+  - **AI:** ask for a change and the AI, which sees the file list, the open file, your edits and any file you name, writes complete files; tap **Apply** to put them in your working copy.
+  - **Terminal:** `ls`, `cd`, `cat`, `grep`, `touch`, `rm`, `mv`, `echo > file`, `preview`, plus git: `git status`, `git diff`, `git commit -m`, `git push`, `git checkout -b`, `git pull`, `git restore`, `git log`, `git branch`, and `gh pr create`. `ai "…"` sends a request to the AI.
+  - **Commit & push** button: the same thing in one tap, onto a new branch with a pull request (default) or the current branch.
 - Streaming answers, the model's thought process where it shares one, Markdown and code highlighting.
 - **Code canvas:** preview HTML/SVG the AI writes, then copy or download it.
 - Edit a past message, regenerate an answer, or stop a reply mid-stream.
@@ -26,6 +32,12 @@ The app needs a free OpenRouter key. No card or payment is required.
 The key is saved only on your device.
 
 **Optional: put the key on Netlify instead,** so the app works on every device without pasting it. Add `OPENROUTER_API_KEY` under **Site configuration → Environment variables**, then redeploy. The site's key only ever reaches free models, because the proxy blocks paid models and paid plugins, so it can't cost you money. Anyone who opens the site can use its free daily messages.
+
+### How the Code terminal works
+
+The terminal runs inside your browser. It reads and changes files and talks to GitHub, so `git commit` creates a real commit on GitHub and `git push` moves the branch to it. It can't run programs like `npm`, `node` or `python`, because a Netlify site has no computer behind it to run them on. Push your changes instead: Netlify builds and deploys the site, and GitHub Actions can run tests. To try an HTML page, use `preview page.html`.
+
+Your edits and unpushed commits are saved on the device, so closing the app doesn't lose them. Pushes are never forced: if GitHub has newer commits on the branch, the push stops so nothing is overwritten.
 
 ### Pushing to GitHub
 
@@ -64,6 +76,11 @@ Browser (SolidJS PWA)
 | `src/components/` | Sidebar, model picker, thread, composer, canvas, settings |
 | `src/lib/github.ts` | Reads repos; pushes files as one commit (branch, pull request) |
 | `src/lib/changes.ts` | Finds complete files in a reply (unit tested) |
+| `src/lib/workspace.ts` | Code workspace: working copy, local commits, push (unit tested) |
+| `src/lib/terminal.ts` | Terminal commands (unit tested against a simulated GitHub) |
+| `src/lib/diff.ts` | Line diffs for `git diff` and change counts |
+| `src/lib/codeai.ts` | The Code workspace's AI assistant |
+| `src/components/code/` | Code view: file tree, editor, AI panel, terminal, commit sheet |
 | `src/lib/web.ts`, `src/lib/tools.ts` | Web page reader, AI tools |
 | `netlify/edge-functions/` | `openrouter` proxy, `read` (web pages) and `status` |
 | `netlify/shared/proxy.ts` | Path allowlist and free-model guard for the site key |

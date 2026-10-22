@@ -1,8 +1,9 @@
 import { createMemo, createSignal, For, Show } from "solid-js"
 import { canInstall, install, standalone } from "../lib/install"
+import { setView, view } from "../lib/view"
 import { activeId, conversations, deleteConversation, isStreaming, newChat, renameConversation, setActiveId } from "../lib/store"
 import type { Conversation } from "../lib/types"
-import { IconCompose, IconDownload, IconEdit, IconSettings, IconTrash } from "./icons"
+import { IconCompose, IconDownload, IconEdit, IconSettings, IconTrash, IconChat, IconCode } from "./icons"
 
 const DAY = 86_400_000
 
@@ -36,6 +37,7 @@ export function Sidebar(props: { open: boolean; onClose: () => void; onSettings:
 
   const open = (id: string) => {
     setActiveId(id)
+    setView("chat")
     props.onClose()
   }
 
@@ -54,10 +56,31 @@ export function Sidebar(props: { open: boolean; onClose: () => void; onSettings:
             aria-label="New chat"
             onClick={() => {
               newChat()
+              setView("chat")
               props.onClose()
             }}
           >
             <IconCompose />
+          </button>
+        </div>
+        <div class="nav-switch">
+          <button
+            class={view() === "chat" ? "on" : ""}
+            onClick={() => {
+              setView("chat")
+              props.onClose()
+            }}
+          >
+            <IconChat /> Chat
+          </button>
+          <button
+            class={view() === "code" ? "on" : ""}
+            onClick={() => {
+              setView("code")
+              props.onClose()
+            }}
+          >
+            <IconCode /> Code
           </button>
         </div>
         <input class="search" type="search" placeholder="Search chats" value={query()} onInput={(e) => setQuery(e.currentTarget.value)} />

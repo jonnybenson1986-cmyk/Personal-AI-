@@ -85,7 +85,7 @@ function github(existing: Record<string, string>) {
     const ref = path.match(/^\/git\/ref\/heads\/(.+)$/)
     if (ref) return existing[decodeURIComponent(ref[1])] ? ok({ object: { sha: existing[decodeURIComponent(ref[1])] } }) : new Response('{"message":"Not Found"}', { status: 404 })
     if (path.startsWith("/git/commits/")) return ok({ tree: { sha: "tree-base" } })
-    if (path.startsWith("/git/trees/tree-base")) return ok({ tree: [{ path: "run.sh", mode: "100755" }, { path: "src/app.ts", mode: "100644" }] })
+    if (path.startsWith("/git/trees/tree-base")) return ok({ tree: [{ path: "run.sh", type: "blob", mode: "100755" }, { path: "src/app.ts", type: "blob", mode: "100644" }] })
     if (path === "/git/trees" && method === "POST") return ok({ sha: "tree-new" })
     if (path === "/git/commits" && method === "POST") return ok({ sha: "commit-new", html_url: "https://github.com/jonny/demo/commit/commit-new" })
     if (path.startsWith("/git/refs")) return ok({})

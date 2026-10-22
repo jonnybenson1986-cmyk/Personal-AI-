@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, onMount, Show } from "solid-js"
+import { createEffect, createSignal, For, lazy, onMount, Show, Suspense } from "solid-js"
 import { useRegisterSW } from "virtual:pwa-register/solid"
 import { InstallHelp, SettingsDialog } from "./components/Dialogs"
 import { IconCompose, IconMenu } from "./components/icons"
@@ -9,6 +9,10 @@ import { Sidebar } from "./components/Sidebar"
 import { Thread } from "./components/Thread"
 import { canChat, refreshStatus } from "./lib/catalog"
 import { activeConversation, loadConversations, loaded, newChat, settings } from "./lib/store"
+import { view } from "./lib/view"
+
+// The Code workspace (editor, terminal) loads only when opened.
+const CodeView = lazy(() => import("./components/code/CodeView"))
 
 const SUGGESTIONS = [
   "Explain a tricky concept simply",
@@ -53,7 +57,14 @@ export function App() {
     </Show>
         <div class="app">
           <Sidebar open={sidebar()} onClose={() => setSidebar(false)} onSettings={() => setShowSettings(true)} onInstallHelp={() => setShowInstall(true)} />
-          <main class="main">
+          <Show when={view() === "code"}>
+            <main class="main">
+              <Suspense fallback={<div class="loading-bar" />}>
+                <CodeView onMenu={() => setSidebar(true)} />
+              </Suspense>
+            </main>
+          </Show>
+          <main class="main" style={{ display: view() === "chat" ? undefined : "none" }}>
             <header class="topbar">
               <button class="icon-button mobile-only" aria-label="Open sidebar" onClick={() => setSidebar(true)}>
                 <IconMenu />
