@@ -6,7 +6,7 @@ import { download } from "../../lib/canvas"
 import { DETACH } from "../../lib/jobs"
 import { renderMarkdown } from "../../lib/markdown"
 import { GATEWAY_AUTO } from "../../lib/models"
-import { isIOS } from "../../lib/device"
+import { isIOS } from "../../lib/install"
 import {
   cloudEnv,
   cloudSteps,
@@ -26,7 +26,7 @@ import {
   usageSummary,
 } from "../../lib/omni"
 import { makeMusic, makeVideo, omniConfigured, omniModels, omniStatus, omniUsage, readDocument, readPage, resumeOmni, webSearch } from "../../lib/omniapi"
-import { gatewayRoute, siteGateway } from "../../lib/route"
+import { gatewayRoute, isThisDevice, siteGateway } from "../../lib/route"
 import { settings, updateSettings } from "../../lib/store"
 import { Segmented } from "../Dialogs"
 import { IconCopy, IconDownload, IconFile, IconGlobe, IconHub, IconMenu, IconMusic, IconSearch, IconStop, IconTrash, IconVideo } from "../icons"
@@ -95,7 +95,8 @@ function CopyBlock(props: { code: string }) {
 }
 
 export default function OmniView(props: { onMenu: () => void }) {
-  const [tab, setTab] = createSignal<Tab>(omniConfigured() ? "tools" : "setup")
+  // Set up first until OmniRoute is usable here (an iPhone given localhost needs fixing first).
+  const [tab, setTab] = createSignal<Tab>(omniConfigured() && !(isIOS() && isThisDevice(settings.omnirouteUrl)) ? "tools" : "setup")
   const [state, setState] = createStore<{ items: Item[] }>({ items: [] })
   const [loaded, setLoaded] = createSignal(false)
   const controllers = new Map<string, AbortController>()
@@ -326,7 +327,12 @@ function Setup(props: { status: { models: number; version?: string } | { error: 
             onChange={(e) => updateSettings({ omnirouteUrl: e.currentTarget.value.trim() })}
           />
         </label>
-        <Show when={route()?.mode === "direct"}>
+        <Show when={isIOS() && isThisDevice(settings.omnirouteUrl)}>
+          <p class="notice error small-text">
+            {"localhost means this iPhone itself, and OmniRoute can't run on an iPhone, so this address can't work here. Use the https address of your OmniRoute cloud server, or of the Cloudflare tunnel on the computer running it (Omni → Set up)."}
+          </p>
+        </Show>
+        <Show when={route()?.mode === "direct" && !(isIOS() && isThisDevice(settings.omnirouteUrl))}>
           <p class="notice small-text">
             A local address works only on the device running OmniRoute, while this app is open, and OmniRoute must allow this site (CORS_ALLOWED_ORIGINS above).
           </p>
@@ -366,7 +372,9 @@ function Setup(props: { status: { models: number; version?: string } | { error: 
             fallback={
               <button
                 class="button primary"
-                disabled={!omniConfigured()}
+                // Only once the connection test has reached OmniRoute, so chat can't be switched to a gateway that isn't there.
+                disabled={!omniConfigured() || !props.status || "error" in props.status}
+                title={!props.status || "error" in props.status ? "Test the connection first" : undefined}
                 onClick={() => {
                   updateSettings({ provider: "omniroute", models: [{ id: GATEWAY_AUTO }] })
                   void refreshCatalog(settings)

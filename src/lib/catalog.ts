@@ -2,7 +2,7 @@ import { createSignal } from "solid-js"
 import { DEFAULT_MODELS, GATEWAY_AUTO } from "./models"
 import { ROUTING_MODES } from "./omni"
 import { type Credentials, errorMessage, lastGatewayModels, listModels, serverStatus } from "./providers"
-import { gatewayReady, setSiteGateway } from "./route"
+import { gatewayReady, setSiteGateway, setSiteOpenRouter } from "./route"
 import { updateSettings } from "./store"
 import type { ModelInfo } from "./types"
 
@@ -18,13 +18,16 @@ const GATEWAY_FALLBACK: ModelInfo[] = [{ id: GATEWAY_AUTO, label: "Auto (OmniRou
 export async function refreshStatus(credentials: Credentials) {
   if (credentials.provider === "omniroute") {
     // The site's own gateway has to be known before the model list can load from it.
-    setSiteGateway((await serverStatus()).omniroute)
+    const server = await serverStatus()
+    setSiteGateway(server.omniroute)
+    setSiteOpenRouter(server.serverKey)
     setCanChat(gatewayReady(credentials.omnirouteUrl ?? "", credentials.omnirouteKey ?? ""))
     await refreshCatalog(credentials)
     return
   }
   const [server] = await Promise.all([serverStatus(), refreshCatalog(credentials)])
   setSiteGateway(server.omniroute)
+  setSiteOpenRouter(server.serverKey)
   if (!credentials.openrouterKey.trim() && !server.serverKey && server.omniroute) {
     // OpenRouter has no key anywhere but the site has OmniRoute set up: use that instead.
     updateSettings({ provider: "omniroute", models: [{ id: GATEWAY_AUTO }] })

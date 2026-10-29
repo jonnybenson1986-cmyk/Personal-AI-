@@ -831,6 +831,8 @@ button:disabled {
 }
 
 .notice {
+  /* Long addresses and settings in messages wrap instead of widening the page. */
+  overflow-wrap: anywhere;
   margin: 8px 0;
   padding: 9px 12px;
   border-radius: 10px;

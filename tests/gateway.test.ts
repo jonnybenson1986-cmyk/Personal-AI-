@@ -112,3 +112,9 @@ test("public https gateways go through the site; local ones are reached directly
   assert.deepEqual(gatewayRoute("https://pi.local:20128"), { mode: "direct", base: "https://pi.local:20128" })
   assert.equal(gatewayRoute("   "), undefined)
 })
+
+test("addresses that mean this device itself are recognised (a phone can't run OmniRoute)", async () => {
+  const { isThisDevice } = await import("../src/lib/route.ts")
+  for (const yes of ["http://localhost:20128", "localhost:20128", "http://127.0.0.1:20128/v1", "http://0.0.0.0:20128"]) assert.equal(isThisDevice(yes), true, yes)
+  for (const no of ["http://192.168.1.20:20128", "https://abc.trycloudflare.com", "https://omni.example.com/v1", "", "nonsense"]) assert.equal(isThisDevice(no), false, no)
+})

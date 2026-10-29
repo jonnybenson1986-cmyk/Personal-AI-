@@ -5,7 +5,9 @@ import OpenAI from "openai"
 import { type ChatMessage, chatMessages } from "./history"
 import { filterFreeModels, filterGatewayModels, type GatewayModel, type OpenRouterModel } from "./models"
 import { followJob, JobError, restartEvents, startJob } from "./jobs"
-import { gatewayFor } from "./route"
+import { isIOS } from "./install"
+import { AUTO_MODEL } from "./models"
+import { gatewayFor, isThisDevice, siteOpenRouter } from "./route"
 import { findTool } from "./tools"
 import type { Conversation, ModelInfo, ModelRef, Provider, StreamEvents, StreamResult, Turn } from "./types"
 
@@ -98,11 +100,7 @@ function noteGateway(c: Credentials) {
   lastGateway = c.provider === "omniroute" ? gatewayFor(c.omnirouteUrl ?? "") : undefined
 }
 
-/**
- * Streams one chat completion. With `job` hooks it runs on the server when it can, so it
- * finishes even if the app closes; the caller saves the id and calls `resumeChat` later.
- */
-export async function streamChat(req: {
+interface ChatRequest {
   messages: ChatMessage[]
   model: ModelRef
   credentials: Credentials
@@ -110,7 +108,36 @@ export async function streamChat(req: {
   events: StreamEvents
   reasoning?: boolean
   job?: JobHooks
-}): Promise<StreamResult> {
+}
+
+const FALLBACK_NOTICE = "OmniRoute couldn't be reached, so the free AI answered. Check it in Omni → Set up."
+
+/**
+ * Streams one chat completion. With `job` hooks it runs on the server when it can, so it
+ * finishes even if the app closes; the caller saves the id and calls `resumeChat` later.
+ * If OmniRoute can't be reached at all (not running, an address this device can't use) and
+ * the free AI is available, the free AI answers instead, with a notice saying so.
+ */
+export async function streamChat(req: ChatRequest): Promise<StreamResult> {
+  let answered = false
+  const events: StreamEvents = {
+    ...req.events,
+    text: (d) => {
+      answered = true
+      req.events.text(d)
+    },
+  }
+  try {
+    return await streamOnce({ ...req, events })
+  } catch (error) {
+    const c = req.credentials
+    if (answered || c.provider !== "omniroute" || !isUnreachable(error) || !(c.openrouterKey.trim() || siteOpenRouter())) throw error
+    const result = await streamOnce({ ...req, credentials: { ...c, provider: "openrouter" }, model: { id: AUTO_MODEL } })
+    return { ...result, notice: [FALLBACK_NOTICE, result.notice].filter(Boolean).join(" ") }
+  }
+}
+
+async function streamOnce(req: ChatRequest): Promise<StreamResult> {
   const where = req.job && backgroundRoute(req.credentials)
   if (where) {
     noteGateway(req.credentials)
@@ -209,6 +236,8 @@ export function errorMessage(error: unknown) {
     }
     if (error.status === 401 && !/Settings/.test(message))
       return lastGateway ? "OmniRoute didn't accept the API key. Check it in Settings → OmniRoute." : "OpenRouter didn't accept the key. Check it in Settings → OpenRouter key."
+    if (error instanceof OpenAI.APIConnectionError && lastGateway?.mode === "direct" && isIOS() && isThisDevice(lastGateway.base))
+      return `${lastGateway.base} means this iPhone itself, and OmniRoute can't run on an iPhone. Use the https address of your OmniRoute cloud server or your computer's Cloudflare tunnel instead (Omni → Set up).`
     if (error instanceof OpenAI.APIConnectionError && lastGateway?.mode === "direct")
       return `Couldn't reach OmniRoute at ${lastGateway.base}. Check it's running, and that it allows this site: start it with CORS_ALLOWED_ORIGINS=${location.origin}`
     if (lastGateway) return message
@@ -218,6 +247,15 @@ export function errorMessage(error: unknown) {
   if (/data policy|privacy/i.test(message))
     return `${message} — To use free models, open openrouter.ai/settings/privacy and allow free model providers, or pick another model.`
   return message
+}
+
+/** OmniRoute couldn't be reached at all (not running, wrong address, offline), as opposed to refusing the request. */
+export function isUnreachable(error: unknown) {
+  if (isAbort(error)) return false
+  if (error instanceof OpenAI.APIConnectionError) return true
+  const status = error instanceof OpenAI.APIError || error instanceof JobError ? error.status : undefined
+  if (status === 502 || status === 503 || status === 504) return true
+  return error instanceof JobError && status === undefined && /fetch failed|ECONNREFUSED|ENOTFOUND|getaddrinfo|timed? ?out|network/i.test(error.message)
 }
 
 export function isAbort(error: unknown) {

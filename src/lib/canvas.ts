@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js"
-import { isIOS, isStandalone } from "./device"
+import { isIOS, standalone } from "./install"
 
 export interface CanvasDoc {
   title: string
@@ -14,7 +14,7 @@ export function download(name: string, data: Blob | string, type = "text/plain")
   const blob = typeof data === "string" ? new Blob([data], { type }) : data
   // In an app added to an iPhone's home screen, a download link opens a dead-end viewer; the
   // share sheet (Save to Files, Save Image…) is the way to keep a file there.
-  if (isIOS() && isStandalone()) {
+  if (isIOS() && standalone()) {
     const file = new File([blob], name, { type: blob.type || type })
     if (navigator.canShare?.({ files: [file] })) {
       navigator.share({ files: [file] }).catch((e: DOMException) => {

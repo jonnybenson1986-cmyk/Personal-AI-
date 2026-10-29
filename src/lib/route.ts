@@ -4,6 +4,15 @@ import { createSignal } from "solid-js"
 
 /** Whether the site has its own OmniRoute gateway on Netlify (from /api/status). */
 export const [siteGateway, setSiteGateway] = createSignal(false)
+/** Whether the site has its own OpenRouter key (OPENROUTER_API_KEY), so the free AI works with none in the app. */
+export const [siteOpenRouter, setSiteOpenRouter] = createSignal(false)
+
+/** An address that means "this device itself" (localhost), which a phone can't be running OmniRoute on. */
+export function isThisDevice(raw: string) {
+  const r = gatewayRoute(raw)
+  if (!r || r.mode !== "direct") return false
+  return /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1\])$/i.test(new URL(r.base).hostname)
+}
 
 const PRIVATE_HOST = /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|\[::1\]|.+\.(local|lan|home|internal))$/i
 

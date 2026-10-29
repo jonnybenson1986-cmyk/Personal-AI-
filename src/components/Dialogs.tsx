@@ -1,7 +1,7 @@
 import { createSignal, type JSX, Show } from "solid-js"
 import { canChat, catalog, gatewayError, refreshCatalog, refreshStatus } from "../lib/catalog"
 import { DEFAULT_SELECTION, GATEWAY_AUTO } from "../lib/models"
-import { gatewayReady, gatewayRoute, siteGateway } from "../lib/route"
+import { gatewayReady, gatewayRoute, isThisDevice, siteGateway } from "../lib/route"
 import { isIOS } from "../lib/install"
 import { clearAll, settings, updateSettings } from "../lib/store"
 import type { Provider, Settings } from "../lib/types"
@@ -90,7 +90,13 @@ function OmniRouteFields(props: { onSave: (patch: Partial<Settings>) => void }) 
           onChange={(e) => props.onSave({ omnirouteUrl: e.currentTarget.value.trim() })}
         />
       </label>
-      <Show when={route()?.mode === "direct"}>
+      <Show when={isIOS() && isThisDevice(settings.omnirouteUrl)}>
+        <div class="notice error">
+          localhost means this iPhone itself, and OmniRoute can't run on an iPhone, so this address can't work here. Use the https address of your OmniRoute cloud server, or of
+          the Cloudflare tunnel on the computer running it (see Omni → Set up). Until then, the free AI answers when OmniRoute can't be reached.
+        </div>
+      </Show>
+      <Show when={route()?.mode === "direct" && !(isIOS() && isThisDevice(settings.omnirouteUrl))}>
         <div class="notice">
           This address is reached straight from your browser, so OmniRoute must allow this site. Start it with{" "}
           <code>CORS_ALLOWED_ORIGINS={location.origin}</code>. To use it from your phone, use the tunnel's https address instead.
