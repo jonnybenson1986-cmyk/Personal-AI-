@@ -3,6 +3,8 @@
 // so requests come here and are passed on with the user's own gateway key. Only the model
 // list, chat, image/audio/video/music generation, search, web reading, OCR and the key's own
 // usage are forwarded, and only to public https addresses.
+// The site can also have its own gateway (OMNIROUTE_URL and OMNIROUTE_API_KEY on Netlify),
+// used when the app sends no address. Its key only ever goes to its own address.
 
 export const GATEWAY_PREFIX = "/api/omniroute"
 const ALLOWED = [
@@ -39,14 +41,33 @@ export function gatewayBase(raw: string | null): string | undefined {
   return (url.origin + url.pathname).replace(/\/+$/, "").replace(/\/v1$/, "")
 }
 
-export async function gatewayProxy(req: Request) {
+type Env = (name: string) => string | undefined
+
+/** The site's own gateway, when OMNIROUTE_URL (public https) and OMNIROUTE_API_KEY are both set. */
+export function siteGateway(env: Env): { base: string; key: string } | undefined {
+  const base = gatewayBase(env("OMNIROUTE_URL") ?? null)
+  const key = env("OMNIROUTE_API_KEY")?.trim()
+  return base && key ? { base, key } : undefined
+}
+
+export async function gatewayProxy(req: Request, env: Env = () => undefined) {
   const url = new URL(req.url)
   const path = url.pathname.slice(GATEWAY_PREFIX.length)
   if (!ALLOWED.some(([method, rule]) => method === req.method && rule.test(path))) return json(404, { error: { message: `Not allowed: ${req.method} ${path}` } })
-  const base = gatewayBase(req.headers.get("x-omniroute-url"))
-  if (!base) return json(400, { error: { message: "OmniRoute address must be a public https:// URL (for a local one, the app connects directly)." } })
-  const auth = req.headers.get("authorization")
-  if (!auth) return json(401, { error: { message: "Add your OmniRoute API key in Settings." } })
+  const own = req.headers.get("x-omniroute-url")
+  let base: string | undefined
+  let auth: string | null
+  if (own) {
+    base = gatewayBase(own)
+    if (!base) return json(400, { error: { message: "OmniRoute address must be a public https:// URL (for a local one, the app connects directly)." } })
+    auth = req.headers.get("authorization")
+    if (!auth) return json(401, { error: { message: "Add your OmniRoute API key in Settings." } })
+  } else {
+    const site = siteGateway(env)
+    if (!site) return json(400, { error: { message: "Add your OmniRoute address in Settings." } })
+    base = site.base
+    auth = `Bearer ${site.key}`
+  }
 
   let res: Response
   try {

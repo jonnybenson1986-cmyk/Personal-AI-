@@ -1,7 +1,7 @@
 import { createSignal, type JSX, Show } from "solid-js"
 import { canChat, catalog, gatewayError, refreshCatalog, refreshStatus } from "../lib/catalog"
 import { DEFAULT_SELECTION, GATEWAY_AUTO } from "../lib/models"
-import { gatewayRoute } from "../lib/route"
+import { gatewayReady, gatewayRoute, siteGateway } from "../lib/route"
 import { isIOS } from "../lib/install"
 import { clearAll, settings, updateSettings } from "../lib/store"
 import type { Provider, Settings } from "../lib/types"
@@ -70,6 +70,9 @@ function OmniRouteFields(props: { onSave: (patch: Partial<Settings>) => void }) 
         OmniRoute is a free AI gateway you run yourself. It connects many providers' free tiers behind one endpoint, with automatic fallback.
         Install it with <code>npm install -g omniroute</code>, run <code>omniroute</code>, and connect providers in its dashboard.
       </p>
+      <Show when={siteGateway()}>
+        <p class="notice small-text">This site has its own OmniRoute gateway set up on Netlify. Leave the address blank to use it, or enter your own.</p>
+      </Show>
       <label class="field">
         <span>OmniRoute address</span>
         <small>
@@ -101,7 +104,7 @@ function OmniRouteFields(props: { onSave: (patch: Partial<Settings>) => void }) 
         onSave={(omnirouteKey) => props.onSave({ omnirouteKey })}
       />
       <div class="inline">
-        <button class="button ghost" disabled={testing() || !settings.omnirouteUrl || !settings.omnirouteKey} onClick={() => void test()}>
+        <button class="button ghost" disabled={testing() || !gatewayReady(settings.omnirouteUrl, settings.omnirouteKey)} onClick={() => void test()}>
           {testing() ? "Testing…" : "Test connection"}
         </button>
         <span class="small-text key-status">

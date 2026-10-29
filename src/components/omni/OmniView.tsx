@@ -26,7 +26,7 @@ import {
   usageSummary,
 } from "../../lib/omni"
 import { makeMusic, makeVideo, omniConfigured, omniModels, omniStatus, omniUsage, readDocument, readPage, resumeOmni, webSearch } from "../../lib/omniapi"
-import { gatewayRoute } from "../../lib/route"
+import { gatewayRoute, siteGateway } from "../../lib/route"
 import { settings, updateSettings } from "../../lib/store"
 import { Segmented } from "../Dialogs"
 import { IconCopy, IconDownload, IconFile, IconGlobe, IconHub, IconMenu, IconMusic, IconSearch, IconStop, IconTrash, IconVideo } from "../icons"
@@ -163,7 +163,7 @@ export default function OmniView(props: { onMenu: () => void }) {
 
   const connected = () => omniConfigured()
   const [status, { refetch }] = createResource(
-    () => (connected() ? settings.omnirouteUrl + settings.omnirouteKey : undefined),
+    () => (connected() ? `${settings.omnirouteUrl}|${settings.omnirouteKey}` : undefined),
     () => omniStatus().catch((e: Error) => ({ error: e.message })),
   )
 
@@ -310,6 +310,9 @@ function Setup(props: { status: { models: number; version?: string } | { error: 
 
       <section class="ai-box">
         <h3>3. Connect</h3>
+        <Show when={siteGateway()}>
+          <p class="notice small-text">This site has its own OmniRoute gateway set up on Netlify. Leave the address blank to use it, or enter your own.</p>
+        </Show>
         <label class="field">
           <span>OmniRoute address</span>
           <input

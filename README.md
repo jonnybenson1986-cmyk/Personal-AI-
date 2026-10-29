@@ -71,6 +71,15 @@ If the repo is this site's own repo, anything pushed to `main` goes live on Netl
    - **From your phone or anywhere:** turn on the **Cloudflare tunnel** in OmniRoute's Dashboard → Endpoints and use its `https://…` address. Requests go through this site's server, so OmniRoute needs no extra settings.
    - **On the computer running OmniRoute:** use `http://localhost:20128`. The browser talks to it directly, so start OmniRoute with `CORS_ALLOWED_ORIGINS=https://your-site.netlify.app`.
 
+**Optional: put OmniRoute on Netlify instead,** so every device uses it without entering anything. OmniRoute itself can't run on Netlify (it's a server that stays on, with its own database), so run it on a cloud host or a computer first (see **Omni → Set up**; on the cloud host it needs its own `JWT_SECRET`, `API_KEY_SECRET` and `INITIAL_PASSWORD`, which that screen generates). Then in Netlify, under **Site configuration → Environment variables**, add:
+
+| Variable | Value |
+| --- | --- |
+| `OMNIROUTE_URL` | Your gateway's public `https://` address, e.g. `https://omniroute.example.com` or its Cloudflare tunnel. `/v1` on the end is fine either way. |
+| `OMNIROUTE_API_KEY` | An API key from OmniRoute's **Dashboard → API Keys**. |
+
+Then redeploy. When both are set, leaving the OmniRoute address blank in the app uses the site's gateway, and if the site has no `OPENROUTER_API_KEY` the app switches to OmniRoute on its own. The address and key stay on Netlify's server and never reach the browser, and the site's key is only ever sent to the site's own address. An address entered in the app still goes with the key entered in the app. **Anyone who can open the site can use this gateway,** including any paid providers you've connected to it, so give the key a quota in OmniRoute's dashboard or turn on Netlify's password protection for the site.
+
 Or follow the **Omni** screen in the app, which has these steps for each kind of device and a connection test. The model picker then lists OmniRoute's routing modes (auto, coding, fast, cheap, smart, offline), models and combos. Chat, the AI tools, Code, Design and Cowork all use it. OmniRoute also unlocks the media features that OpenRouter's free tier doesn't have: image generation and AI photo edits, speech-to-text and text-to-speech, using whichever image and audio models your gateway offers. The site's proxy only forwards the model list, chat, images, audio, video, music, search, page reading, OCR and your key's own usage, only to public `https://` addresses, and only with your own OmniRoute key.
 
 ### How replies keep going when the app is closed

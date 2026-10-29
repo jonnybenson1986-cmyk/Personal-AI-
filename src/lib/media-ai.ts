@@ -4,9 +4,10 @@
 import { toFile } from "openai"
 import { gatewayMediaModels } from "./models"
 import { client, lastGatewayModels, listModels, streamChat } from "./providers"
+import { gatewayReady } from "./route"
 import { settings } from "./store"
 
-export const hasGateway = () => settings.provider === "omniroute" && !!settings.omnirouteUrl.trim() && !!settings.omnirouteKey.trim()
+export const hasGateway = () => settings.provider === "omniroute" && gatewayReady(settings.omnirouteUrl, settings.omnirouteKey)
 
 /** OmniRoute's image/speech/transcription models; loads the model list if it hasn't been. */
 export async function mediaModels() {
