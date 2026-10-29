@@ -7,7 +7,7 @@
 // Keys are never stored: they travel with the start request only. The request itself is
 // deleted as soon as the job starts, and finished jobs are deleted once the app has them (or
 // after a day).
-import { gatewayBase } from "./gateway.ts"
+import { gatewayBase, siteGateway } from "./gateway.ts"
 import { isFreeModel, json, PLACEHOLDER_KEY } from "./proxy.ts"
 
 export interface JobStore {
@@ -22,7 +22,7 @@ export interface JobInput {
   model: string
   messages: unknown[]
   reasoning?: boolean
-  /** Public https address of the user's OmniRoute gateway. */
+  /** Public https address of the user's OmniRoute gateway; without one, the site's own (OMNIROUTE_URL). */
   omnirouteUrl?: string
   /** An OmniRoute request other than chat (video, music, OCR…), whose JSON answer is kept whole. */
   request?: { path: string; body: unknown }
@@ -70,11 +70,14 @@ const userOpenRouterKey = (k?: string) => (k && k !== PLACEHOLDER_KEY && k.start
 /** Where a job's request goes and with which key, or why it can't run. */
 export function upstreamFor(input: JobInput, secrets: JobSecrets, env: (name: string) => string | undefined, openrouterOrigin = OPENROUTER_ORIGIN) {
   if (input.provider === "omniroute") {
-    const base = gatewayBase(input.omnirouteUrl ?? null)
+    // No address from the app means the site's own gateway, with the site's key.
+    const site = input.omnirouteUrl ? undefined : siteGateway(env)
+    const base = site?.base ?? gatewayBase(input.omnirouteUrl ?? null)
     if (!base) return { error: "Background replies need a public https:// OmniRoute address.", code: 400 }
-    if (!secrets.omnirouteKey) return { error: "Add your OmniRoute API key in Settings.", code: 401 }
-    if (input.request) return { url: base + input.request.path, key: secrets.omnirouteKey, extra: {} }
-    return { url: `${base}/v1/chat/completions`, key: secrets.omnirouteKey, extra: input.reasoning ? { reasoning_effort: "high" } : {} }
+    const key = site?.key ?? secrets.omnirouteKey
+    if (!key) return { error: "Add your OmniRoute API key in Settings.", code: 401 }
+    if (input.request) return { url: base + input.request.path, key, extra: {} }
+    return { url: `${base}/v1/chat/completions`, key, extra: input.reasoning ? { reasoning_effort: "high" } : {} }
   }
   let key = userOpenRouterKey(secrets.openrouterKey)
   if (!key) {

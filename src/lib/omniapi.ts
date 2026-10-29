@@ -3,7 +3,7 @@
 // requests run as server jobs, so they finish even if the app closes); local ones are called
 // straight from the browser.
 import { followJob, startJob } from "./jobs"
-import { gatewayRoute } from "./route"
+import { gatewayFor, gatewayReady } from "./route"
 import { settings } from "./store"
 import type { StreamEvents } from "./types"
 
@@ -16,12 +16,12 @@ export class OmniError extends Error {
   }
 }
 
-/** Whether an OmniRoute address and key are set (it needn't be the chat provider). */
-export const omniConfigured = () => !!gatewayRoute(settings.omnirouteUrl) && !!settings.omnirouteKey.trim()
+/** Whether OmniRoute can be used: an address and key, or the site's own (it needn't be the chat provider). */
+export const omniConfigured = () => gatewayReady(settings.omnirouteUrl, settings.omnirouteKey)
 
 function route() {
-  const r = gatewayRoute(settings.omnirouteUrl)
-  if (!r || !settings.omnirouteKey.trim()) throw new OmniError("Connect OmniRoute first: add its address and API key under Set up.")
+  const r = gatewayFor(settings.omnirouteUrl)
+  if (!r || !omniConfigured()) throw new OmniError("Connect OmniRoute first: add its address and API key under Set up.")
   return r
 }
 
@@ -41,9 +41,10 @@ async function errorFrom(res: Response) {
 /** A request to OmniRoute, through the site's proxy or straight to a local one. */
 export async function omniFetch(path: string, init: { method?: string; body?: unknown; signal?: AbortSignal } = {}) {
   const r = route()
-  const headers: Record<string, string> = { authorization: `Bearer ${settings.omnirouteKey.trim()}` }
+  // The site's own gateway (no base) gets its address and key on the server.
+  const headers: Record<string, string> = r.base ? { authorization: `Bearer ${settings.omnirouteKey.trim()}` } : {}
   if (init.body !== undefined) headers["content-type"] = "application/json"
-  if (r.mode === "proxy") headers["x-omniroute-url"] = r.base
+  if (r.mode === "proxy" && r.base) headers["x-omniroute-url"] = r.base
   let res: Response
   try {
     res = await fetch(r.mode === "proxy" ? `/api/omniroute${path}` : r.base + path, {
@@ -74,7 +75,7 @@ export async function omniRun(path: string, body: Record<string, unknown>, signa
   const r = route()
   if (r.mode === "proxy" && settings.background !== false) {
     const id = await startJob(
-      { input: { provider: "omniroute", model: String(body.model ?? ""), messages: [], omnirouteUrl: r.base, request: { path, body } }, secrets: { omnirouteKey: settings.omnirouteKey.trim() } },
+      { input: { provider: "omniroute", model: String(body.model ?? ""), messages: [], omnirouteUrl: r.base || undefined, request: { path, body } }, secrets: r.base ? { omnirouteKey: settings.omnirouteKey.trim() } : {} },
       signal,
     )
     if (id) {

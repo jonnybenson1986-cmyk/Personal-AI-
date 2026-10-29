@@ -63,6 +63,15 @@ test("OmniRoute jobs need a public https address and the user's key", () => {
   })
 })
 
+test("OmniRoute jobs without an address use the site's gateway and key", () => {
+  const omni = { ...input, provider: "omniroute" as const }
+  const site = env({ OMNIROUTE_URL: "https://omni.example.com", OMNIROUTE_API_KEY: "sk-omni-site" })
+  assert.deepEqual(upstreamFor(omni, {}, site), { url: "https://omni.example.com/v1/chat/completions", key: "sk-omni-site", extra: {} })
+  assert.equal((upstreamFor(omni, {}, env({})) as { code: number }).code, 400)
+  // An address from the app always goes with the app's key, never the site's.
+  assert.equal((upstreamFor({ ...omni, omnirouteUrl: "https://other.example.com" }, {}, site) as { code: number }).code, 401)
+})
+
 test("starting a job saves the request without the key and starts the background function", async () => {
   const { store, data } = memoryStore()
   const { res, json, starts } = await api(store, "POST", "/api/jobs", { input, secrets: { openrouterKey: "sk-or-mine" } })

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { afterEach, test } from "node:test"
-import { gatewayBase, gatewayProxy } from "../netlify/shared/gateway.ts"
+import { gatewayBase, gatewayProxy, siteGateway } from "../netlify/shared/gateway.ts"
 
 const realFetch = globalThis.fetch
 afterEach(() => {
@@ -22,6 +22,26 @@ test("only public https gateway addresses are accepted", () => {
   assert.equal(gatewayBase("https://my.host/omniroute/v1/"), "https://my.host/omniroute")
   for (const bad of ["http://omni.example.com/v1", "https://localhost:20128/v1", "https://127.0.0.1/v1", "https://10.0.0.2", "https://pi.local", "https://user:pw@omni.example.com", "nonsense", null])
     assert.equal(gatewayBase(bad), undefined, String(bad))
+})
+
+test("without an address from the app, the site's own gateway and key are used", async () => {
+  const site = { OMNIROUTE_URL: "https://omni.example.com/v1", OMNIROUTE_API_KEY: "sk-omni-site" }
+  const env = (vars: Record<string, string>) => (n: string) => vars[n]
+  assert.deepEqual(siteGateway(env(site)), { base: "https://omni.example.com", key: "sk-omni-site" })
+  assert.equal(siteGateway(env({ OMNIROUTE_URL: site.OMNIROUTE_URL })), undefined)
+  assert.equal(siteGateway(env({ ...site, OMNIROUTE_URL: "http://localhost:20128" })), undefined)
+
+  const calls = capture()
+  const req = (headers: Record<string, string>) => gatewayProxy(new Request("https://site.app/api/omniroute/v1/models", { headers }), env(site))
+  assert.equal((await req({})).status, 200)
+  assert.equal(calls[0].url, "https://omni.example.com/v1/models")
+  assert.equal(new Headers(calls[0].init.headers).get("authorization"), "Bearer sk-omni-site")
+  // The site's key never goes to an address the app sent.
+  await req({ "x-omniroute-url": "https://other.example.com", authorization: "Bearer sk-omni-mine" })
+  assert.equal(calls[1].url, "https://other.example.com/v1/models")
+  assert.equal(new Headers(calls[1].init.headers).get("authorization"), "Bearer sk-omni-mine")
+  assert.equal((await gatewayProxy(new Request("https://site.app/api/omniroute/v1/models", { headers: { "x-omniroute-url": "https://other.example.com" } }), env(site))).status, 401)
+  assert.equal((await gatewayProxy(new Request("https://site.app/api/omniroute/v1/models"), env({}))).status, 400)
 })
 
 test("chat and model list are forwarded with the user's gateway key", async () => {

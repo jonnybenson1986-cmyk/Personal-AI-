@@ -1,7 +1,9 @@
 import { createSignal } from "solid-js"
 import { DEFAULT_MODELS, GATEWAY_AUTO } from "./models"
 import { ROUTING_MODES } from "./omni"
-import { type Credentials, errorMessage, hasServerKey, lastGatewayModels, listModels } from "./providers"
+import { type Credentials, errorMessage, lastGatewayModels, listModels, serverStatus } from "./providers"
+import { gatewayReady, setSiteGateway } from "./route"
+import { updateSettings } from "./store"
 import type { ModelInfo } from "./types"
 
 /** Whether the app has a key it can chat with; undefined until checked. */
@@ -15,17 +17,25 @@ const GATEWAY_FALLBACK: ModelInfo[] = [{ id: GATEWAY_AUTO, label: "Auto (OmniRou
 /** Works out whether the app can chat, and loads the models it can use. */
 export async function refreshStatus(credentials: Credentials) {
   if (credentials.provider === "omniroute") {
-    setCanChat(!!credentials.omnirouteUrl?.trim() && !!credentials.omnirouteKey?.trim())
+    // The site's own gateway has to be known before the model list can load from it.
+    setSiteGateway((await serverStatus()).omniroute)
+    setCanChat(gatewayReady(credentials.omnirouteUrl ?? "", credentials.omnirouteKey ?? ""))
     await refreshCatalog(credentials)
     return
   }
-  const [server] = await Promise.all([hasServerKey(), refreshCatalog(credentials)])
-  setCanChat(!!credentials.openrouterKey.trim() || server)
+  const [server] = await Promise.all([serverStatus(), refreshCatalog(credentials)])
+  setSiteGateway(server.omniroute)
+  if (!credentials.openrouterKey.trim() && !server.serverKey && server.omniroute) {
+    // OpenRouter has no key anywhere but the site has OmniRoute set up: use that instead.
+    updateSettings({ provider: "omniroute", models: [{ id: GATEWAY_AUTO }] })
+    return refreshStatus({ ...credentials, provider: "omniroute" })
+  }
+  setCanChat(!!credentials.openrouterKey.trim() || server.serverKey)
 }
 
 export async function refreshCatalog(credentials?: Credentials) {
   if (credentials?.provider === "omniroute") {
-    if (!credentials.omnirouteUrl?.trim() || !credentials.omnirouteKey?.trim()) {
+    if (!gatewayReady(credentials.omnirouteUrl ?? "", credentials.omnirouteKey ?? "")) {
       setGatewayError(undefined)
       setCatalog(GATEWAY_FALLBACK)
       return 0

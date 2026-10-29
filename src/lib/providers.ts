@@ -5,7 +5,7 @@ import OpenAI from "openai"
 import { type ChatMessage, chatMessages } from "./history"
 import { filterFreeModels, filterGatewayModels, type GatewayModel, type OpenRouterModel } from "./models"
 import { followJob, JobError, restartEvents, startJob } from "./jobs"
-import { gatewayRoute } from "./route"
+import { gatewayFor } from "./route"
 import { findTool } from "./tools"
 import type { Conversation, ModelInfo, ModelRef, Provider, StreamEvents, StreamResult, Turn } from "./types"
 
@@ -32,13 +32,13 @@ let lastGateway: { mode: "proxy" | "direct"; base: string } | undefined
 
 export function client(c: Credentials) {
   if (c.provider === "omniroute") {
-    const route = gatewayRoute(c.omnirouteUrl ?? "")
+    const route = gatewayFor(c.omnirouteUrl ?? "")
     if (!route) throw new Error("Add your OmniRoute address in Settings.")
     lastGateway = route
     return new OpenAI({
       baseURL: route.mode === "direct" ? `${route.base}/v1` : `${location.origin}/api/omniroute/v1`,
       apiKey: c.omnirouteKey?.trim() || "no-key",
-      defaultHeaders: route.mode === "proxy" ? { "x-omniroute-url": route.base } : undefined,
+      defaultHeaders: route.mode === "proxy" && route.base ? { "x-omniroute-url": route.base } : undefined,
       dangerouslyAllowBrowser: true,
       maxRetries: 1,
     })
@@ -90,12 +90,12 @@ export async function streamReply(req: StreamRequest): Promise<StreamResult> {
 function backgroundRoute(c: Credentials) {
   if (c.background === false) return undefined
   if (c.provider !== "omniroute") return { provider: "openrouter" as const }
-  const route = gatewayRoute(c.omnirouteUrl ?? "")
-  return route?.mode === "proxy" ? { provider: "omniroute" as const, omnirouteUrl: route.base } : undefined
+  const route = gatewayFor(c.omnirouteUrl ?? "")
+  return route?.mode === "proxy" ? { provider: "omniroute" as const, omnirouteUrl: route.base || undefined } : undefined
 }
 
 function noteGateway(c: Credentials) {
-  lastGateway = c.provider === "omniroute" ? gatewayRoute(c.omnirouteUrl ?? "") : undefined
+  lastGateway = c.provider === "omniroute" ? gatewayFor(c.omnirouteUrl ?? "") : undefined
 }
 
 /**
@@ -186,14 +186,18 @@ export async function listModels(credentials?: Credentials): Promise<ModelInfo[]
   return filterFreeModels(body.data)
 }
 
-export async function hasServerKey() {
+/** What the site has set on Netlify: an OpenRouter key, and its own OmniRoute gateway. */
+export async function serverStatus() {
   try {
     const res = await fetch("/api/status")
-    if (res.ok) return ((await res.json()) as { serverKey: boolean }).serverKey
+    if (res.ok) {
+      const body = (await res.json()) as { serverKey?: boolean; omniroute?: boolean }
+      return { serverKey: !!body.serverKey, omniroute: !!body.omniroute }
+    }
   } catch {
-    // Offline: only a key entered in the app counts.
+    // Offline: only keys entered in the app count.
   }
-  return false
+  return { serverKey: false, omniroute: false }
 }
 
 export function errorMessage(error: unknown) {
