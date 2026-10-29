@@ -22,7 +22,7 @@ const PLACEHOLDER_KEY = "set-on-server"
 // Remembered for error messages, which don't otherwise know where a request went.
 let lastGateway: { mode: "proxy" | "direct"; base: string } | undefined
 
-function client(c: Credentials) {
+export function client(c: Credentials) {
   if (c.provider === "omniroute") {
     const route = gatewayRoute(c.omnirouteUrl ?? "")
     if (!route) throw new Error("Add your OmniRoute address in Settings.")
@@ -117,11 +117,15 @@ export async function streamChat(req: {
   return { notice }
 }
 
+/** OmniRoute's full model list (including image and audio models) from the last load. */
+export let lastGatewayModels: GatewayModel[] = []
+
 /** Free chat models from OpenRouter's live list (needs no key), or the gateway's models. */
 export async function listModels(credentials?: Credentials): Promise<ModelInfo[]> {
   if (credentials?.provider === "omniroute") {
     const page = await client(credentials).models.list()
-    return filterGatewayModels(page.data as unknown as GatewayModel[])
+    lastGatewayModels = page.data as unknown as GatewayModel[]
+    return filterGatewayModels(lastGatewayModels)
   }
   const res = await fetch("/api/openrouter/v1/models")
   if (!res.ok) throw new Error(`Model list failed: ${res.status}`)

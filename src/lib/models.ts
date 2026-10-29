@@ -59,6 +59,7 @@ export const GATEWAY_AUTO = "auto"
 export interface GatewayModel {
   id: string
   type?: string
+  subtype?: string
   display_name?: string
   owned_by?: string
   context_length?: number
@@ -87,4 +88,14 @@ export function filterGatewayModels(list: GatewayModel[]): ModelInfo[] {
   const auto = models.filter((m) => m.id === GATEWAY_AUTO || m.id.startsWith(`${GATEWAY_AUTO}/`))
   const rest = models.filter((m) => !auto.includes(m)).sort((a, b) => a.label.localeCompare(b.label))
   return [...auto, ...rest]
+}
+
+/** The gateway's image, speech (text to voice) and transcription models. */
+export function gatewayMediaModels(list: GatewayModel[]) {
+  const ids = (fn: (m: GatewayModel) => boolean) => list.filter(fn).map((m) => m.id).sort()
+  return {
+    image: ids((m) => m.type === "image"),
+    speech: ids((m) => (m.type === "audio" && m.subtype === "speech") || m.type === "tts"),
+    transcription: ids((m) => (m.type === "audio" && m.subtype !== "speech") || m.type === "stt"),
+  }
 }

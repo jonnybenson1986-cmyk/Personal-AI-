@@ -1,9 +1,18 @@
-import { createMemo, createSignal, For, Show } from "solid-js"
+import { createMemo, createSignal, For, type JSX, Show } from "solid-js"
 import { canInstall, install, standalone } from "../lib/install"
-import { setView, view } from "../lib/view"
+import { setView, type View, VIEWS, view } from "../lib/view"
 import { activeId, conversations, deleteConversation, isStreaming, newChat, renameConversation, setActiveId } from "../lib/store"
 import type { Conversation } from "../lib/types"
-import { IconCompose, IconDownload, IconEdit, IconSettings, IconTrash, IconChat, IconCode } from "./icons"
+import { IconCompose, IconDownload, IconEdit, IconSettings, IconTrash, IconChat, IconCode, IconImage, IconPalette, IconPeople, IconWave } from "./icons"
+
+const NAV_ICON: Record<View, () => JSX.Element> = {
+  chat: IconChat,
+  code: IconCode,
+  design: IconPalette,
+  cowork: IconPeople,
+  image: IconImage,
+  audio: IconWave,
+}
 
 const DAY = 86_400_000
 
@@ -64,24 +73,20 @@ export function Sidebar(props: { open: boolean; onClose: () => void; onSettings:
           </button>
         </div>
         <div class="nav-switch">
-          <button
-            class={view() === "chat" ? "on" : ""}
-            onClick={() => {
-              setView("chat")
-              props.onClose()
-            }}
-          >
-            <IconChat /> Chat
-          </button>
-          <button
-            class={view() === "code" ? "on" : ""}
-            onClick={() => {
-              setView("code")
-              props.onClose()
-            }}
-          >
-            <IconCode /> Code
-          </button>
+          <For each={VIEWS}>
+            {(v) => (
+              <button
+                class={view() === v.id ? "on" : ""}
+                onClick={() => {
+                  setView(v.id)
+                  props.onClose()
+                }}
+              >
+                {NAV_ICON[v.id]()}
+                {v.label}
+              </button>
+            )}
+          </For>
         </div>
         <input class="search" type="search" placeholder="Search chats" value={query()} onInput={(e) => setQuery(e.currentTarget.value)} />
         <nav class="history">

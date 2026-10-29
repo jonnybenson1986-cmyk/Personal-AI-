@@ -1,10 +1,20 @@
 import { createSignal } from "solid-js"
 
-export type View = "chat" | "code"
+export type View = "chat" | "code" | "design" | "cowork" | "image" | "audio"
+
+export const VIEWS: { id: View; label: string }[] = [
+  { id: "chat", label: "Chat" },
+  { id: "code", label: "Code" },
+  { id: "design", label: "Design" },
+  { id: "cowork", label: "Cowork" },
+  { id: "image", label: "Photo" },
+  { id: "audio", label: "Audio" },
+]
 
 function initial(): View {
   try {
-    return localStorage.getItem("personal-ai:view") === "code" ? "code" : "chat"
+    const saved = localStorage.getItem("personal-ai:view")
+    return VIEWS.some((v) => v.id === saved) ? (saved as View) : "chat"
   } catch {
     return "chat"
   }

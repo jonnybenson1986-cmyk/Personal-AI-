@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, lazy, onMount, Show, Suspense } from "solid-js"
+import { createEffect, createSignal, For, lazy, Match, onMount, Show, Suspense, Switch } from "solid-js"
 import { useRegisterSW } from "virtual:pwa-register/solid"
 import { InstallHelp, SettingsDialog } from "./components/Dialogs"
 import { IconCompose, IconMenu } from "./components/icons"
@@ -11,8 +11,12 @@ import { canChat, refreshStatus } from "./lib/catalog"
 import { activeConversation, loadConversations, loaded, newChat, settings } from "./lib/store"
 import { view } from "./lib/view"
 
-// The Code workspace (editor, terminal) loads only when opened.
+// The workspaces load only when opened, so chat stays fast.
 const CodeView = lazy(() => import("./components/code/CodeView"))
+const DesignView = lazy(() => import("./components/design/DesignView"))
+const CoworkView = lazy(() => import("./components/cowork/CoworkView"))
+const ImageEditor = lazy(() => import("./components/media/ImageEditor"))
+const AudioEditor = lazy(() => import("./components/media/AudioEditor"))
 
 const SUGGESTIONS = [
   "Explain a tricky concept simply",
@@ -57,10 +61,26 @@ export function App() {
     </Show>
         <div class="app">
           <Sidebar open={sidebar()} onClose={() => setSidebar(false)} onSettings={() => setShowSettings(true)} onInstallHelp={() => setShowInstall(true)} />
-          <Show when={view() === "code"}>
+          <Show when={view() !== "chat"}>
             <main class="main">
               <Suspense fallback={<div class="loading-bar" />}>
-                <CodeView onMenu={() => setSidebar(true)} />
+                <Switch>
+                  <Match when={view() === "code"}>
+                    <CodeView onMenu={() => setSidebar(true)} />
+                  </Match>
+                  <Match when={view() === "design"}>
+                    <DesignView onMenu={() => setSidebar(true)} />
+                  </Match>
+                  <Match when={view() === "cowork"}>
+                    <CoworkView onMenu={() => setSidebar(true)} />
+                  </Match>
+                  <Match when={view() === "image"}>
+                    <ImageEditor onMenu={() => setSidebar(true)} />
+                  </Match>
+                  <Match when={view() === "audio"}>
+                    <AudioEditor onMenu={() => setSidebar(true)} />
+                  </Match>
+                </Switch>
               </Suspense>
             </main>
           </Show>

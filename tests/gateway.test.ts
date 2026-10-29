@@ -36,10 +36,19 @@ test("chat and model list are forwarded with the user's gateway key", async () =
   assert.equal(new TextDecoder().decode(calls[1].init.body as ArrayBuffer), '{"model":"auto"}')
 })
 
+test("image and audio generation are forwarded too", async () => {
+  const calls = capture()
+  const headers = { "x-omniroute-url": "https://omni.example.com", authorization: "Bearer k" }
+  for (const path of ["images/generations", "images/edits", "audio/transcriptions", "audio/speech"])
+    assert.equal((await proxyReq(`/api/omniroute/v1/${path}`, { method: "POST", headers, body: "{}" })).status, 200, path)
+  assert.equal(calls.length, 4)
+})
+
 test("anything else is refused before reaching the gateway", async () => {
   const calls = capture()
   const good = { "x-omniroute-url": "https://omni.example.com", authorization: "Bearer k" }
   assert.equal((await proxyReq("/api/omniroute/api/keys", { headers: good })).status, 404)
+  assert.equal((await proxyReq("/api/omniroute/v1/images/upscale", { method: "POST", headers: good, body: "{}" })).status, 404)
   assert.equal((await proxyReq("/api/omniroute/v1/chat/completions", { headers: good })).status, 404)
   assert.equal((await proxyReq("/api/omniroute/v1/models", { headers: { ...good, "x-omniroute-url": "http://192.168.1.5:20128" } })).status, 400)
   assert.equal((await proxyReq("/api/omniroute/v1/models", { headers: { "x-omniroute-url": "https://omni.example.com" } })).status, 401)
