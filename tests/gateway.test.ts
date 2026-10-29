@@ -36,12 +36,15 @@ test("chat and model list are forwarded with the user's gateway key", async () =
   assert.equal(new TextDecoder().decode(calls[1].init.body as ArrayBuffer), '{"model":"auto"}')
 })
 
-test("image and audio generation are forwarded too", async () => {
+test("image, audio, video and music generation, search, page reading and OCR are forwarded too", async () => {
   const calls = capture()
   const headers = { "x-omniroute-url": "https://omni.example.com", authorization: "Bearer k" }
-  for (const path of ["images/generations", "images/edits", "audio/transcriptions", "audio/speech"])
+  for (const path of ["images/generations", "images/edits", "audio/transcriptions", "audio/speech", "videos/generations", "music/generations", "search", "web/fetch", "ocr"])
     assert.equal((await proxyReq(`/api/omniroute/v1/${path}`, { method: "POST", headers, body: "{}" })).status, 200, path)
-  assert.equal(calls.length, 4)
+  // The key's own usage (with its query) is the one management path allowed.
+  assert.equal((await proxyReq("/api/omniroute/api/usage/om-usage?format=json", { headers })).status, 200)
+  assert.equal(calls.length, 10)
+  assert.equal(calls[9].url, "https://omni.example.com/api/usage/om-usage?format=json")
 })
 
 test("anything else is refused before reaching the gateway", async () => {
@@ -69,11 +72,14 @@ test("the gateway's chat models and combos make the picker, auto first", async (
     { id: "auto/coding:fast", owned_by: "combo" },
     { id: "dall-e-3", type: "image" },
   ])
-  assert.deepEqual(models.map((m) => m.id), ["auto", "auto/coding:fast", "groq/llama-4", "my-coding-combo"])
+  const modes = ["auto", "auto/coding", "auto/fast", "auto/cheap", "auto/smart", "auto/offline"]
+  assert.deepEqual(models.map((m) => m.id), [...modes, "auto/coding:fast", "groq/llama-4", "my-coding-combo"])
   assert.equal(models[0].label, "Auto (OmniRoute picks)")
-  assert.equal(models[2].hint, "131K context")
-  assert.equal(models[3].label, "My coding combo")
-  assert.equal(models[3].hint, "Combo")
+  assert.equal(models[0].vision, true)
+  assert.equal(models[1].label, "Auto · best for code")
+  assert.equal(models[7].hint, "131K context")
+  assert.equal(models[8].label, "My coding combo")
+  assert.equal(models[8].hint, "Combo")
 })
 
 test("public https gateways go through the site; local ones are reached directly", async () => {

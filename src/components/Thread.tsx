@@ -4,6 +4,7 @@ import { catalog } from "../lib/catalog"
 import { isImage } from "../lib/history"
 import { fileExtension, renderMarkdown } from "../lib/markdown"
 import { modelLabel } from "../lib/models"
+import { decisionLabel } from "../lib/omni"
 import { editAndResend, isStreaming, regenerate } from "../lib/store"
 import { findTool } from "../lib/tools"
 import { PushCard } from "./PushCard"
@@ -64,6 +65,7 @@ function ReplyView(props: { reply: Reply; last: boolean; convId: string; compare
         <Show when={r().servedBy && !r().servedBy!.startsWith(r().model.id.replace(/:free$/, ""))}>
           <span class="served-by">· {modelLabel(r().servedBy!, catalog())}</span>
         </Show>
+        <Show when={decisionLabel(r().route)}>{(label) => <span class="served-by">· {label()}</span>}</Show>
       </div>
       <Show when={r().thinking}>
         <button class="thinking-toggle" onClick={() => setShowThinking(!showThinking())} aria-expanded={showThinking()}>

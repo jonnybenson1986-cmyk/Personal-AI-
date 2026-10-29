@@ -17,6 +17,7 @@ const DesignView = lazy(() => import("./components/design/DesignView"))
 const CoworkView = lazy(() => import("./components/cowork/CoworkView"))
 const ImageEditor = lazy(() => import("./components/media/ImageEditor"))
 const AudioEditor = lazy(() => import("./components/media/AudioEditor"))
+const OmniView = lazy(() => import("./components/omni/OmniView"))
 
 const SUGGESTIONS = [
   "Explain a tricky concept simply",
@@ -85,6 +86,9 @@ export function App() {
                   </Match>
                   <Match when={view() === "audio"}>
                     <AudioEditor onMenu={() => setSidebar(true)} />
+                  </Match>
+                  <Match when={view() === "omni"}>
+                    <OmniView onMenu={() => setSidebar(true)} />
                   </Match>
                 </Switch>
               </Suspense>

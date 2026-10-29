@@ -30,6 +30,8 @@ export interface Reply {
   error?: string
   /** The server job generating this reply, so it can be picked up again after the app closes. */
   job?: string
+  /** How OmniRoute routed it, e.g. "strategy=auto; provider=groq; latency_ms=812". */
+  route?: string
   /** Set once this reply's file changes were pushed to GitHub. */
   pushed?: { commitUrl: string; branchUrl: string; branch: string; pullRequestUrl?: string }
   createdAt: number
@@ -99,4 +101,8 @@ export interface StreamEvents {
 export interface StreamResult {
   /** Set when the reply ended early; shown under it. */
   notice?: string
+  /** OmniRoute's routing decision for the reply (X-OmniRoute-Decision). */
+  route?: string
+  /** The JSON answer of a non-chat OmniRoute job. */
+  result?: unknown
 }

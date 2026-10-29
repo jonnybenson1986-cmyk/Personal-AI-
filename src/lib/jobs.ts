@@ -14,7 +14,7 @@ export class JobError extends Error {
 }
 
 export interface JobStart {
-  input: { provider: "openrouter" | "omniroute"; model: string; messages: unknown[]; reasoning?: boolean; omnirouteUrl?: string }
+  input: { provider: "openrouter" | "omniroute"; model: string; messages: unknown[]; reasoning?: boolean; omnirouteUrl?: string; request?: { path: string; body: unknown } }
   secrets: { openrouterKey?: string; omnirouteKey?: string }
 }
 
@@ -44,6 +44,8 @@ interface Progress {
   notice?: string
   error?: string
   code?: number
+  route?: string
+  result?: unknown
 }
 
 /**
@@ -131,7 +133,7 @@ export async function followJob(id: string, events: StreamEvents, signal: AbortS
       thinking = p.thinkingLength
       if (p.status === "done") {
         forget()
-        return { notice: p.notice }
+        return { notice: p.notice, route: p.route, result: p.result }
       }
       if (p.status === "error") {
         forget()

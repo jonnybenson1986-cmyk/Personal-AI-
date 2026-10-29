@@ -3,7 +3,7 @@ import { canInstall, install, standalone } from "../lib/install"
 import { setView, type View, VIEWS, view } from "../lib/view"
 import { activeId, conversations, deleteConversation, isStreaming, newChat, renameConversation, setActiveId } from "../lib/store"
 import type { Conversation } from "../lib/types"
-import { IconCompose, IconDownload, IconEdit, IconSettings, IconTrash, IconChat, IconCode, IconImage, IconPalette, IconPeople, IconWave } from "./icons"
+import { IconCompose, IconDownload, IconEdit, IconSettings, IconTrash, IconChat, IconCode, IconImage, IconPalette, IconPeople, IconWave, IconHub } from "./icons"
 
 const NAV_ICON: Record<View, () => JSX.Element> = {
   chat: IconChat,
@@ -12,6 +12,7 @@ const NAV_ICON: Record<View, () => JSX.Element> = {
   cowork: IconPeople,
   image: IconImage,
   audio: IconWave,
+  omni: IconHub,
 }
 
 const DAY = 86_400_000

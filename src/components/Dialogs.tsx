@@ -23,7 +23,7 @@ export function Modal(props: { title: string; onClose: () => void; children: JSX
   )
 }
 
-function Segmented<T extends string>(props: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
+export function Segmented<T extends string>(props: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
   return (
     <div class="segmented" role="radiogroup">
       {props.options.map((o) => (

@@ -126,16 +126,18 @@ export async function streamChat(req: {
       return followJob(id, req.events, req.signal)
     }
   }
-  const stream = await client(req.credentials).chat.completions.create(
-    {
-      model: req.model.id,
-      messages: req.messages as OpenAI.Chat.ChatCompletionMessageParam[],
-      stream: true,
-      // OpenRouter's reasoning control, or the standard OpenAI field for a gateway.
-      ...(req.reasoning ? (req.credentials.provider === "omniroute" ? { reasoning_effort: "high" } : { reasoning: { effort: "high" } }) : {}),
-    } as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
-    { signal: req.signal },
-  )
+  const { data: stream, response } = await client(req.credentials)
+    .chat.completions.create(
+      {
+        model: req.model.id,
+        messages: req.messages as OpenAI.Chat.ChatCompletionMessageParam[],
+        stream: true,
+        // OpenRouter's reasoning control, or the standard OpenAI field for a gateway.
+        ...(req.reasoning ? (req.credentials.provider === "omniroute" ? { reasoning_effort: "high" } : { reasoning: { effort: "high" } }) : {}),
+      } as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
+      { signal: req.signal },
+    )
+    .withResponse()
 
   let served = false
   let notice: string | undefined
@@ -155,7 +157,8 @@ export async function streamChat(req: {
     if (choice?.finish_reason === "length") notice = "The response hit the length limit."
     if (choice?.finish_reason === "error") throw new Error("The model stopped with an error. Try again or pick another model.")
   }
-  return { notice }
+  // OmniRoute says which provider answered (readable when the site's proxy passes it on).
+  return { notice, route: response.headers.get("x-omniroute-decision") ?? undefined }
 }
 
 /**

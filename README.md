@@ -21,6 +21,11 @@ A personal AI chat, coding, design and media app that runs on **free open models
 - **Cowork:** bring files and work on them with the AI. Add documents, spreadsheets (CSV), PDFs, Word files, images or code, or drop them in; on Chrome and Edge on a computer you can **open a whole folder** and save changes back to it. The AI reads them (text inside PDFs and Word files too; tick images to let it see them), answers questions and writes new or improved files that you **Save** with one tap. Edit files yourself, revert to the original, download one file or everything as a zip. Quick asks: summarize, compare, pull out action items, make a table, proofread, write a report.
 - **Photo** editor: brightness, contrast, saturation, warmth, hue, vignette and blur sliders; filters (Vivid, Warm, Mono, Noir, Sepia…); crop with aspect ratios, rotate and flip; draw and add text; undo/redo; export JPEG or PNG at full size or smaller. AI: **AI adjust** (describe the look you want), **Describe** the photo, and with OmniRoute, **AI edit** and **generate** images.
 - **Audio** editor: open a file or record from the microphone, select on the waveform, then keep or delete the selection, fade in/out, change volume, normalize, mute, reverse, speed up or slow down, insert silence, make mono, and append recordings; undo/redo; export WAV. With OmniRoute: **transcribe** speech to text and turn text into **speech** with a choice of voices.
+- **Omni** (OmniRoute hub): everything needed to run [OmniRoute](https://www.omniroute.online) and use it from Jonny's AI.
+  - **Set up:** step-by-step install for a computer, an Android phone (Termux), Docker or from source, with copyable commands; connecting providers, creating an API key and making it reachable from your phone (Cloudflare Quick Tunnel or `CORS_ALLOWED_ORIGINS`); connect and test; switch all AI to OmniRoute in one tap; check your key's usage.
+  - **Tools:** web search, read any web page as clean text, make videos, make music, and read the text in PDFs and photos (OCR). Results can be downloaded, copied or saved to Cowork. Slow ones (video, music) keep going on the server if you close the app.
+  - **Providers & routing:** OmniRoute's routing modes and free providers worth connecting.
+  - The model picker gets OmniRoute's routing modes (**auto**, best for code, fastest, cheapest, smartest, most available), and each reply says which provider answered and how fast (e.g. "via groq · 812 ms").
 - **Keeps working when the app is closed:** replies in Chat, Code, Cowork and Design are written on the site's server, so closing the app, switching apps or locking your phone doesn't stop them. When you open the app again the finished reply is there (or it carries on live if it's still being written). Stop still stops it. It can be turned off in **Settings → Keep working when the app is closed**.
 - Streaming answers, the model's thought process where it shares one, Markdown and code highlighting.
 - **Code canvas:** preview HTML/SVG the AI writes, then copy or download it.
@@ -66,7 +71,7 @@ If the repo is this site's own repo, anything pushed to `main` goes live on Netl
    - **From your phone or anywhere:** turn on the **Cloudflare tunnel** in OmniRoute's Dashboard → Endpoints and use its `https://…` address. Requests go through this site's server, so OmniRoute needs no extra settings.
    - **On the computer running OmniRoute:** use `http://localhost:20128`. The browser talks to it directly, so start OmniRoute with `CORS_ALLOWED_ORIGINS=https://your-site.netlify.app`.
 
-The model picker then lists OmniRoute's models and combos, with **Auto** first. Chat, the AI tools, Code, Design and Cowork all use it. OmniRoute also unlocks the media features that OpenRouter's free tier doesn't have: image generation and AI photo edits, speech-to-text and text-to-speech, using whichever image and audio models your gateway offers. The site's proxy only forwards the model list, chat, images and audio, only to public `https://` addresses, and only with your own OmniRoute key.
+Or follow the **Omni** screen in the app, which has these steps for each kind of device and a connection test. The model picker then lists OmniRoute's routing modes (auto, coding, fast, cheap, smart, offline), models and combos. Chat, the AI tools, Code, Design and Cowork all use it. OmniRoute also unlocks the media features that OpenRouter's free tier doesn't have: image generation and AI photo edits, speech-to-text and text-to-speech, using whichever image and audio models your gateway offers. The site's proxy only forwards the model list, chat, images, audio, video, music, search, page reading, OCR and your key's own usage, only to public `https://` addresses, and only with your own OmniRoute key.
 
 ### How replies keep going when the app is closed
 
@@ -115,6 +120,7 @@ Browser (SolidJS PWA)
 | `netlify/shared/read.ts` | Fetches public web pages and turns them into text |
 | `netlify/shared/gateway.ts` | Proxy to your OmniRoute gateway (public https only, unit tested) |
 | `netlify/shared/jobs.ts`, `netlify/functions/run-job.mts` | Replies that run on the server and keep going when the app is closed (unit tested) |
+| `src/lib/omni.ts`, `src/lib/omniapi.ts`, `src/components/omni/` | Omni screen: OmniRoute setup guide, routing modes and tools (helpers unit tested) |
 | `src/lib/jobs.ts` | Starts server replies and follows their progress |
 | `src/lib/route.ts` | Decides whether OmniRoute is reached through the proxy or directly |
 | `src/lib/design.ts`, `src/components/design/` | Design studio: design types, prompts, reading designs out of replies (unit tested) |

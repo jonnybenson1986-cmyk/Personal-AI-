@@ -55,3 +55,16 @@ export const IconRotate = () => base(<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7
 export const IconFlip = () => base(<path d="M12 3v18M8 7l-5 5 5 5V7zM16 7l5 5-5 5V7z" />, 16)
 export const IconPen = () => base(<path d="M4 20l4-1 11-11a2.1 2.1 0 0 0-3-3L5 16l-1 4z" />, 16)
 export const IconText = () => base(<path d="M5 6V4h14v2M12 4v16M9 20h6" />, 16)
+export const IconHub = () =>
+  base(
+    <>
+      <circle cx="12" cy="12" r="2.8" />
+      <circle cx="5" cy="5" r="1.8" />
+      <circle cx="19" cy="5" r="1.8" />
+      <circle cx="5" cy="19" r="1.8" />
+      <circle cx="19" cy="19" r="1.8" />
+      <path d="M6.4 6.4l3.6 3.6M17.6 6.4L14 10M6.4 17.6l3.6-3.6M17.6 17.6L14 14" />
+    </>,
+  )
+export const IconSearch = () => base(<><circle cx="11" cy="11" r="6.5" /><path d="M20 20l-4.2-4.2" /></>)
+export const IconMusic = () => base(<><path d="M9 18V5l11-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="17" cy="16" r="3" /></>)

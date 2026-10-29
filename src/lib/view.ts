@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js"
 
-export type View = "chat" | "code" | "design" | "cowork" | "image" | "audio"
+export type View = "chat" | "code" | "design" | "cowork" | "image" | "audio" | "omni"
 
 export const VIEWS: { id: View; label: string }[] = [
   { id: "chat", label: "Chat" },
@@ -9,6 +9,7 @@ export const VIEWS: { id: View; label: string }[] = [
   { id: "cowork", label: "Cowork" },
   { id: "image", label: "Photo" },
   { id: "audio", label: "Audio" },
+  { id: "omni", label: "Omni" },
 ]
 
 function initial(): View {

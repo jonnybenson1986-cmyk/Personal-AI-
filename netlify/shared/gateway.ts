@@ -1,7 +1,8 @@
 // Proxy to the user's own OpenAI-compatible gateway (OmniRoute) when it has a public https
 // address. The browser can't call it directly unless the gateway allows this site's origin,
 // so requests come here and are passed on with the user's own gateway key. Only the model
-// list, chat, and image/audio generation are forwarded, and only to public https addresses.
+// list, chat, image/audio/video/music generation, search, web reading, OCR and the key's own
+// usage are forwarded, and only to public https addresses.
 
 export const GATEWAY_PREFIX = "/api/omniroute"
 const ALLOWED = [
@@ -9,8 +10,14 @@ const ALLOWED = [
   ["POST", /^\/v1\/chat\/completions$/],
   ["POST", /^\/v1\/images\/(generations|edits)$/],
   ["POST", /^\/v1\/audio\/(transcriptions|speech)$/],
+  ["POST", /^\/v1\/(videos|music)\/generations$/],
+  ["GET", /^\/v1\/search$/],
+  ["POST", /^\/v1\/search$/],
+  ["POST", /^\/v1\/web\/fetch$/],
+  ["POST", /^\/v1\/ocr$/],
+  ["GET", /^\/api\/usage\/om-usage$/],
 ] as const
-const RESPONSE_HEADERS = ["content-type", "content-disposition", "retry-after", "x-ratelimit-remaining", "x-request-id"]
+const RESPONSE_HEADERS = ["content-type", "content-disposition", "retry-after", "x-ratelimit-remaining", "x-request-id", "x-omniroute-decision", "x-omniroute-version", "x-omniroute-cache"]
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } })

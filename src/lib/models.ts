@@ -1,4 +1,5 @@
 import type { ModelInfo, ModelRef } from "./types"
+import { ROUTING_MODES } from "./omni.ts"
 
 export const AUTO_MODEL = "openrouter/free"
 
@@ -85,9 +86,11 @@ export function filterGatewayModels(list: GatewayModel[]): ModelInfo[] {
         vision,
       }
     })
-  const auto = models.filter((m) => m.id === GATEWAY_AUTO || m.id.startsWith(`${GATEWAY_AUTO}/`))
-  const rest = models.filter((m) => !auto.includes(m)).sort((a, b) => a.label.localeCompare(b.label))
-  return [...auto, ...rest]
+  // OmniRoute's routing modes always come first, with plain names, even if the list omits them.
+  const modes: ModelInfo[] = ROUTING_MODES.map((m) => ({ id: m.id, label: m.label, hint: m.hint, vision: models.find((x) => x.id === m.id)?.vision }))
+  const auto = models.filter((m) => (m.id === GATEWAY_AUTO || m.id.startsWith(`${GATEWAY_AUTO}/`)) && !ROUTING_MODES.some((r) => r.id === m.id))
+  const rest = models.filter((m) => !auto.includes(m) && !ROUTING_MODES.some((r) => r.id === m.id)).sort((a, b) => a.label.localeCompare(b.label))
+  return [...modes, ...auto, ...rest]
 }
 
 /** The gateway's image, speech (text to voice) and transcription models. */

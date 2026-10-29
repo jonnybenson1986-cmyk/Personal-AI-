@@ -210,3 +210,35 @@ test("old jobs are cleaned up, recent ones kept", async () => {
   await purgeOld(store, now)
   assert.deepEqual([...data.keys()], [`job/${fresh}`])
 })
+
+test("slow OmniRoute requests run as jobs and keep their JSON answer", async () => {
+  const { store, data } = memoryStore()
+  const omni = { provider: "omniroute", model: "runway/gen-3", messages: [], omnirouteUrl: "https://omni.example.com", request: { path: "/v1/videos/generations", body: { model: "runway/gen-3", prompt: "waves" } } }
+  // Only the known slow endpoints, and only for OmniRoute.
+  assert.equal((await api(store, "POST", "/api/jobs", { input: { ...omni, request: { path: "/api/keys", body: {} } }, secrets: { omnirouteKey: "k" } })).res.status, 400)
+  assert.equal((await api(store, "POST", "/api/jobs", { input: { ...omni, provider: "openrouter" }, secrets: { openrouterKey: "sk-or-x" } })).res.status, 400)
+  const { json } = await api(store, "POST", "/api/jobs", { input: omni, secrets: { omnirouteKey: "k" } })
+  const calls: { url: string; init: RequestInit }[] = []
+  globalThis.fetch = (async (url: string, init: RequestInit) => {
+    calls.push({ url, init })
+    return new Response(JSON.stringify({ created: 1, data: [{ url: "https://cdn/v.mp4", format: "mp4" }] }), { headers: { "content-type": "application/json", "x-omniroute-decision": "strategy=single; provider=runway; latency_ms=90000" } })
+  }) as typeof fetch
+  await runJob(json.id, { omnirouteKey: "k" }, { store, env: env({}) })
+  const job = data.get(`job/${json.id}`) as JobRecord
+  assert.equal(job.status, "done")
+  assert.deepEqual(job.result, { created: 1, data: [{ url: "https://cdn/v.mp4", format: "mp4" }] })
+  assert.equal(job.route, "strategy=single; provider=runway; latency_ms=90000")
+  assert.equal(calls[0].url, "https://omni.example.com/v1/videos/generations")
+  assert.deepEqual(JSON.parse(String(calls[0].init.body)), { model: "runway/gen-3", prompt: "waves" })
+  assert.equal(new Headers(calls[0].init.headers).get("authorization"), "Bearer k")
+})
+
+test("chat jobs keep OmniRoute's routing decision", async () => {
+  const { store, data } = memoryStore()
+  const { json } = await api(store, "POST", "/api/jobs", { input: { provider: "omniroute", model: "auto", messages: [{ role: "user", content: "hi" }], omnirouteUrl: "https://omni.example.com" }, secrets: { omnirouteKey: "k" } })
+  globalThis.fetch = (async () => new Response(sse(chunk("Hi")), { headers: { "x-omniroute-decision": "strategy=auto; provider=groq; latency_ms=300" } })) as unknown as typeof fetch
+  await runJob(json.id, { omnirouteKey: "k" }, { store, env: env({}) })
+  const job = data.get(`job/${json.id}`) as JobRecord
+  assert.equal(job.text, "Hi")
+  assert.equal(job.route, "strategy=auto; provider=groq; latency_ms=300")
+})

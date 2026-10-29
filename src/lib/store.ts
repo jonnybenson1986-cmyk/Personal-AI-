@@ -241,12 +241,13 @@ const replyEvents = (update: (fn: (r: Reply) => void) => void) => ({
   servedBy: (m: string) => update((r) => (r.servedBy = m)),
 })
 
-async function settle(run: Promise<{ notice?: string }>, update: (fn: (r: Reply) => void) => void, done: () => void) {
+async function settle(run: Promise<{ notice?: string; route?: string }>, update: (fn: (r: Reply) => void) => void, done: () => void) {
   try {
     const result = await run
     update((r) => {
       r.status = "done"
       r.job = undefined
+      if (result.route) r.route = result.route
       if (result.notice) r.error = result.notice
     })
   } catch (error) {
