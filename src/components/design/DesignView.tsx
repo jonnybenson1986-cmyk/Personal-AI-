@@ -3,7 +3,8 @@ import { createStore, produce, reconcile } from "solid-js/store"
 import { get, set } from "idb-keyval"
 import { download } from "../../lib/canvas"
 import { designDocument, designRequest, designSummary, designSystem, extractDesign, findKind, KINDS } from "../../lib/design"
-import { errorMessage, isAbort, streamChat } from "../../lib/providers"
+import { DETACH } from "../../lib/jobs"
+import { errorMessage, isAbort, type JobHooks, resumeChat, streamChat } from "../../lib/providers"
 import { settings } from "../../lib/store"
 import { IconMenu, IconPalette, IconSend, IconStop, IconTrash } from "../icons"
 
@@ -20,6 +21,8 @@ interface Design {
   kind: string
   versions: Version[]
   current: number
+  /** A version being made on the server, picked up again if the app was closed meanwhile. */
+  pending?: { job: string; prompt: string }
 }
 
 interface State {
@@ -77,7 +80,15 @@ export default function DesignView(props: { onMenu: () => void }) {
     const saved = await get<State>(KEY).catch(() => undefined)
     if (saved?.designs) setState(reconcile(saved))
     setLoaded(true)
+    const waiting = state.designs.find((d) => d.pending)
+    if (waiting) {
+      const { job, prompt } = waiting.pending!
+      setState("active", waiting.id)
+      void run(waiting.id, findKind(waiting.kind), prompt, (events, signal) => resumeChat(job, settings, events, signal, () => {}))
+    }
   })
+  // Leaving the Design screen stops watching; a reply on the server still finishes.
+  onCleanup(() => controller?.abort(DETACH))
   createEffect(() => {
     const snapshot = JSON.parse(JSON.stringify(state))
     if (loaded()) void set(KEY, snapshot).catch(() => {})
@@ -142,22 +153,37 @@ export default function DesignView(props: { onMenu: () => void }) {
       setState("designs", (list) => [d!, ...list])
       setState("active", d.id)
     }
-    const id = d.id
     const current = version()?.code
-    setStreaming("")
-    controller = new AbortController()
-    try {
-      let reply = ""
-      await streamChat({
+    await run(d.id, k, instruction, (events, signal, job) =>
+      streamChat({
         messages: [
           { role: "system", content: designSystem(k) },
           { role: "user", content: designRequest(k, instruction, current) },
         ],
         model: settings.models[0],
         credentials: settings,
-        signal: controller.signal,
-        events: { text: (t) => setStreaming((reply += t)), thinking: () => {}, servedBy: () => {} },
-      })
+        signal,
+        events,
+        job,
+      }),
+    )
+  }
+
+  /** Makes a new version of a design from a reply, streamed now or picked up from the server. */
+  async function run(
+    id: string,
+    k: ReturnType<typeof findKind>,
+    instruction: string,
+    start: (events: { text(d: string): void; thinking(d: string): void; servedBy(m: string): void }, signal: AbortSignal, job: JobHooks) => Promise<unknown>,
+  ) {
+    setStreaming("")
+    controller = new AbortController()
+    const signal = controller.signal
+    const job: JobHooks = { started: (jobId) => setState("designs", (x) => x.id === id, "pending", { job: jobId, prompt: instruction }) }
+    try {
+      let reply = ""
+      await start({ text: (t) => setStreaming((reply += t)), thinking: () => {}, servedBy: () => {} }, signal, job)
+      setState("designs", (x) => x.id === id, "pending", undefined)
       const result = extractDesign(reply, k.format)
       if (!result) throw new Error("The AI didn't return a design. Try again, or pick another model.")
       setState(
@@ -171,6 +197,8 @@ export default function DesignView(props: { onMenu: () => void }) {
       )
       setInput("")
     } catch (e) {
+      if (signal.reason === DETACH) return
+      setState("designs", (x) => x.id === id, "pending", undefined)
       if (!isAbort(e)) setError(errorMessage(e))
       // A first attempt that produced nothing leaves no empty design behind.
       if (!state.designs.find((x) => x.id === id)?.versions.length) {

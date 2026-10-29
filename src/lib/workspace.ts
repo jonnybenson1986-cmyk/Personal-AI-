@@ -22,6 +22,8 @@ export interface CodeTurn {
   error?: string
   /** Files from the reply already applied to the working copy. */
   applied?: boolean
+  /** The server job writing this reply, if it runs there. */
+  job?: string
 }
 
 export interface WorkspaceState {
@@ -90,8 +92,11 @@ export function update(fn: (s: WorkspaceState) => void) {
   save()
 }
 
+let restored = false
+/** Loads the saved workspace once per app start; after that the one in memory is current. */
 export async function restoreWorkspace() {
-  if (typeof indexedDB === "undefined") return
+  if (typeof indexedDB === "undefined" || restored) return
+  restored = true
   const saved = await get<WorkspaceState>(KEY).catch(() => undefined)
   if (saved?.target) setWs(reconcile({ ...empty(), ...saved }))
 }

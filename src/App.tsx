@@ -44,6 +44,12 @@ export function App() {
 
   onMount(() => {
     void loadConversations()
+    // Code and Cowork replies that finished on the server while the app was closed come back now,
+    // not only when those screens are opened.
+    void import("./lib/coworkspace").then((m) => m.restoreCowork()).catch(() => {})
+    void Promise.all([import("./lib/workspace"), import("./lib/codeai")])
+      .then(([w, ai]) => w.restoreWorkspace().then(ai.resumeCodeAI))
+      .catch(() => {})
     void refreshStatus(settings)
   })
 

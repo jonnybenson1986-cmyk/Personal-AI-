@@ -6,8 +6,9 @@ import { parseFileChanges } from "./changes"
 import { coworkSystem, fileKind, type FileKind, isTextKind, pickContext, safePath, uniquePath, docxText } from "./cowork"
 import { readFile as readAttachment } from "./files"
 import type { ChatMessage } from "./history"
-import { errorMessage, isAbort, streamChat } from "./providers"
+import { errorMessage, isAbort, resumeChat, streamChat } from "./providers"
 import { settings } from "./store"
+import type { StreamEvents, StreamResult } from "./types"
 
 export interface CoworkFile {
   path: string
@@ -34,6 +35,8 @@ export interface CoworkTurn {
   error?: string
   /** Files in the reply, once applied. */
   applied?: string[]
+  /** The server job writing this reply, if it runs there. */
+  job?: string
 }
 
 interface State {
@@ -72,8 +75,14 @@ let restoring: Promise<void> | undefined
 export function restoreCowork() {
   restoring ??= (async () => {
     const saved = await get<State>(KEY).catch(() => undefined)
-    if (saved) setCw(reconcile({ ...saved, picked: saved.picked ?? [], files: saved.files ?? [], chat: (saved.chat ?? []).map((t) => (t.status === "streaming" ? { ...t, status: "stopped" as const } : t)) }))
+    // A reply that was streaming in the app is over; one running on the server is picked up again.
+    if (saved) setCw(reconcile({ ...saved, picked: saved.picked ?? [], files: saved.files ?? [], chat: (saved.chat ?? []).map((t) => (t.status === "streaming" && !t.job ? { ...t, status: "stopped" as const } : t)) }))
     loaded = true
+    for (const t of cw.chat) {
+      if (t.status !== "streaming" || !t.job) continue
+      const job = t.job
+      void follow(t.id, (events, signal) => resumeChat(job, settings, events, signal, () => edit(t.id, (x) => (x.reply = ""))))
+    }
   })()
   return restoring
 }
@@ -340,26 +349,36 @@ export async function askAI(request: string) {
   update((s) => {
     s.chat.push({ id, text: request, reply: "", status: "streaming" })
   })
-  const edit = (fn: (t: CoworkTurn) => void) =>
-    update((s) => {
-      const t = s.chat.find((x) => x.id === id)
-      if (t) fn(t)
-    })
-  controller = new AbortController()
-  try {
-    const result = await streamChat({
+  await follow(id, (events, signal) =>
+    streamChat({
       messages: [{ role: "system", content: coworkSystem(settings.system) }, ...history, user],
       model: settings.models[0],
       credentials: settings,
-      signal: controller.signal,
-      events: { text: (d) => edit((t) => (t.reply += d)), thinking: () => {}, servedBy: () => {} },
-    })
-    edit((t) => {
+      signal,
+      events,
+      job: { started: (job) => edit(id, (t) => (t.job = job)) },
+    }),
+  )
+}
+
+const edit = (id: string, fn: (t: CoworkTurn) => void) =>
+  update((s) => {
+    const t = s.chat.find((x) => x.id === id)
+    if (t) fn(t)
+  })
+
+async function follow(id: string, start: (events: StreamEvents, signal: AbortSignal) => Promise<StreamResult>) {
+  controller = new AbortController()
+  try {
+    const result = await start({ text: (d) => edit(id, (t) => (t.reply += d)), thinking: () => {}, servedBy: () => {} }, controller.signal)
+    edit(id, (t) => {
       t.status = "done"
+      t.job = undefined
       if (result.notice) t.error = result.notice
     })
   } catch (e) {
-    edit((t) => {
+    edit(id, (t) => {
+      t.job = undefined
       if (isAbort(e)) t.status = "stopped"
       else {
         t.status = "error"

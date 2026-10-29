@@ -2,7 +2,7 @@ import { createStore, produce, reconcile } from "solid-js/store"
 import { createSignal } from "solid-js"
 import { del, get, set } from "idb-keyval"
 import { DEFAULT_SELECTION, GATEWAY_AUTO } from "./models"
-import { errorMessage, isAbort, streamReply } from "./providers"
+import { errorMessage, isAbort, resumeChat, streamReply } from "./providers"
 import type { Attachment, Conversation, ModelRef, RepoTarget, Reply, Settings, Turn } from "./types"
 
 const SETTINGS_KEY = "personal-ai:settings"
@@ -21,6 +21,7 @@ const defaults: Settings = {
   system: "",
   theme: "system",
   models: DEFAULT_SELECTION,
+  background: true,
 }
 
 function loadSettings(): Settings {
@@ -54,12 +55,18 @@ export const [loaded, setLoaded] = createSignal(false)
 export async function loadConversations() {
   const ids = ((await get<string[]>(INDEX_KEY)) ?? []) as string[]
   const list = (await Promise.all(ids.map((id) => get<Conversation>(convKey(id))))).filter(Boolean) as Conversation[]
-  // A reply that was streaming when the app closed can't resume.
+  // A reply that was streaming in the app when it closed can't resume; one running on the server can.
+  const resumable: [string, string, string, string][] = []
   for (const c of list)
     for (const t of c.turns)
-      for (const r of t.replies) if (r.status === "streaming") Object.assign(r, { status: r.text ? "stopped" : "error", error: r.text ? undefined : "Interrupted" })
+      for (const r of t.replies) {
+        if (r.status !== "streaming") continue
+        if (r.job) resumable.push([c.id, t.id, r.id, r.job])
+        else Object.assign(r, { status: r.text ? "stopped" : "error", error: r.text ? undefined : "Interrupted" })
+      }
   setConversations(list.sort((a, b) => b.updatedAt - a.updatedAt))
   setLoaded(true)
+  for (const [convId, turnId, replyId, job] of resumable) void resumeOne(convId, turnId, replyId, job)
 }
 
 const pending = new Map<string, number>()
@@ -217,13 +224,55 @@ function track(convId: string) {
   return { controller, done: () => controllers.get(convId)?.delete(controller) }
 }
 
+const replyUpdater = (convId: string, turnId: string, replyId: string) => (fn: (r: Reply) => void) =>
+  mutate(convId, (c) => {
+    const r = c.turns.find((t) => t.id === turnId)?.replies.find((x) => x.id === replyId)
+    if (r) fn(r)
+  })
+
 function addReply(convId: string, turnId: string, reply: Reply) {
   mutate(convId, (c) => c.turns.find((t) => t.id === turnId)?.replies.push(reply))
-  return (fn: (r: Reply) => void) =>
-    mutate(convId, (c) => {
-      const r = c.turns.find((t) => t.id === turnId)?.replies.find((x) => x.id === reply.id)
-      if (r) fn(r)
+  return replyUpdater(convId, turnId, reply.id)
+}
+
+const replyEvents = (update: (fn: (r: Reply) => void) => void) => ({
+  text: (d: string) => update((r) => (r.text += d)),
+  thinking: (d: string) => update((r) => (r.thinking += d)),
+  servedBy: (m: string) => update((r) => (r.servedBy = m)),
+})
+
+async function settle(run: Promise<{ notice?: string }>, update: (fn: (r: Reply) => void) => void, done: () => void) {
+  try {
+    const result = await run
+    update((r) => {
+      r.status = "done"
+      r.job = undefined
+      if (result.notice) r.error = result.notice
     })
+  } catch (error) {
+    update((r) => {
+      r.job = undefined
+      if (isAbort(error)) r.status = "stopped"
+      else {
+        r.status = "error"
+        r.error = errorMessage(error)
+      }
+    })
+  } finally {
+    done()
+  }
+}
+
+/** Picks up a reply that kept going on the server while the app was closed. */
+function resumeOne(convId: string, turnId: string, replyId: string, job: string) {
+  const update = replyUpdater(convId, turnId, replyId)
+  const clear = () =>
+    update((r) => {
+      r.text = ""
+      r.thinking = ""
+    })
+  const { controller, done } = track(convId)
+  return settle(resumeChat(job, settings, replyEvents(update), controller.signal, clear), update, done)
 }
 
 async function streamOne(convId: string, turnId: string, model: ModelRef) {
@@ -234,33 +283,23 @@ async function streamOne(convId: string, turnId: string, model: ModelRef) {
   const snapshot = JSON.parse(JSON.stringify(conversations.find((c) => c.id === convId))) as Conversation
   const index = snapshot.turns.findIndex((t) => t.id === turnId)
 
-  try {
-    const result = await streamReply({
+  await settle(
+    streamReply({
       conversation: snapshot,
       history: snapshot.turns.slice(0, index),
       current: snapshot.turns[index],
       model,
       credentials: settings,
       signal: controller.signal,
-      events: {
-        text: (d) => update((r) => (r.text += d)),
-        thinking: (d) => update((r) => (r.thinking += d)),
-        servedBy: (m) => update((r) => (r.servedBy = m)),
+      events: replyEvents(update),
+      job: {
+        started: (id) => {
+          update((r) => (r.job = id))
+          void save(convId)
+        },
       },
-    })
-    update((r) => {
-      r.status = "done"
-      if (result.notice) r.error = result.notice
-    })
-  } catch (error) {
-    update((r) => {
-      if (isAbort(error)) r.status = "stopped"
-      else {
-        r.status = "error"
-        r.error = errorMessage(error)
-      }
-    })
-  } finally {
-    done()
-  }
+    }),
+    update,
+    done,
+  )
 }

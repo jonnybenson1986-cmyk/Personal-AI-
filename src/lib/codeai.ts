@@ -2,9 +2,10 @@
 // request, and answers with complete files that can be applied to the working copy.
 import { parseFileChanges } from "./changes"
 import type { ChatMessage } from "./history"
-import { errorMessage, isAbort, streamChat } from "./providers"
+import { errorMessage, isAbort, resumeChat, streamChat } from "./providers"
 import { settings } from "./store"
 import { EDIT_FORMAT } from "./tools"
+import type { StreamEvents, StreamResult } from "./types"
 import { readFile, update, workingFiles, writeFile, ws } from "./workspace"
 
 const CONTEXT_BYTES = 150_000
@@ -67,32 +68,58 @@ export async function askAI(request: string) {
   update((s) => {
     s.chat.push({ id, text: request, reply: "", status: "streaming" })
   })
-  const edit = (fn: (t: (typeof ws.chat)[number]) => void) =>
-    update((s) => {
-      const t = s.chat.find((x) => x.id === id)
-      if (t) fn(t)
-    })
-  controller = new AbortController()
-  try {
-    const result = await streamChat({
+  await follow(id, (events, signal) =>
+    streamChat({
       messages: [{ role: "system", content: system() }, ...history, { role: "user", content: `${context}\n\n${request}` }],
       model: settings.models[0],
       credentials: settings,
-      signal: controller.signal,
-      events: { text: (d) => edit((t) => (t.reply += d)), thinking: () => {}, servedBy: () => {} },
-    })
-    edit((t) => {
+      signal,
+      events,
+      job: { started: (job) => edit(id, (t) => (t.job = job)) },
+    }),
+  )
+}
+
+const edit = (id: string, fn: (t: (typeof ws.chat)[number]) => void) =>
+  update((s) => {
+    const t = s.chat.find((x) => x.id === id)
+    if (t) fn(t)
+  })
+
+async function follow(id: string, start: (events: StreamEvents, signal: AbortSignal) => Promise<StreamResult>) {
+  controller = new AbortController()
+  try {
+    const result = await start({ text: (d) => edit(id, (t) => (t.reply += d)), thinking: () => {}, servedBy: () => {} }, controller.signal)
+    edit(id, (t) => {
       t.status = "done"
+      t.job = undefined
       if (result.notice) t.error = result.notice
     })
   } catch (e) {
-    edit((t) => {
+    edit(id, (t) => {
+      t.job = undefined
       if (isAbort(e)) t.status = "stopped"
       else {
         t.status = "error"
         t.error = errorMessage(e)
       }
     })
+  }
+}
+
+/** After a reload: picks up a reply still running on the server; one that ran in the app is over. */
+let resumed = false
+export function resumeCodeAI() {
+  if (resumed) return
+  resumed = true
+  for (const t of ws.chat) {
+    if (t.status !== "streaming") continue
+    if (!t.job) {
+      edit(t.id, (x) => (x.status = "stopped"))
+      continue
+    }
+    const job = t.job
+    void follow(t.id, (events, signal) => resumeChat(job, settings, events, signal, () => edit(t.id, (x) => (x.reply = ""))))
   }
 }
 

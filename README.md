@@ -21,6 +21,7 @@ A personal AI chat, coding, design and media app that runs on **free open models
 - **Cowork:** bring files and work on them with the AI. Add documents, spreadsheets (CSV), PDFs, Word files, images or code, or drop them in; on Chrome and Edge on a computer you can **open a whole folder** and save changes back to it. The AI reads them (text inside PDFs and Word files too; tick images to let it see them), answers questions and writes new or improved files that you **Save** with one tap. Edit files yourself, revert to the original, download one file or everything as a zip. Quick asks: summarize, compare, pull out action items, make a table, proofread, write a report.
 - **Photo** editor: brightness, contrast, saturation, warmth, hue, vignette and blur sliders; filters (Vivid, Warm, Mono, Noir, Sepia…); crop with aspect ratios, rotate and flip; draw and add text; undo/redo; export JPEG or PNG at full size or smaller. AI: **AI adjust** (describe the look you want), **Describe** the photo, and with OmniRoute, **AI edit** and **generate** images.
 - **Audio** editor: open a file or record from the microphone, select on the waveform, then keep or delete the selection, fade in/out, change volume, normalize, mute, reverse, speed up or slow down, insert silence, make mono, and append recordings; undo/redo; export WAV. With OmniRoute: **transcribe** speech to text and turn text into **speech** with a choice of voices.
+- **Keeps working when the app is closed:** replies in Chat, Code, Cowork and Design are written on the site's server, so closing the app, switching apps or locking your phone doesn't stop them. When you open the app again the finished reply is there (or it carries on live if it's still being written). Stop still stops it. It can be turned off in **Settings → Keep working when the app is closed**.
 - Streaming answers, the model's thought process where it shares one, Markdown and code highlighting.
 - **Code canvas:** preview HTML/SVG the AI writes, then copy or download it.
 - Edit a past message, regenerate an answer, or stop a reply mid-stream.
@@ -67,6 +68,16 @@ If the repo is this site's own repo, anything pushed to `main` goes live on Netl
 
 The model picker then lists OmniRoute's models and combos, with **Auto** first. Chat, the AI tools, Code, Design and Cowork all use it. OmniRoute also unlocks the media features that OpenRouter's free tier doesn't have: image generation and AI photo edits, speech-to-text and text-to-speech, using whichever image and audio models your gateway offers. The site's proxy only forwards the model list, chat, images and audio, only to public `https://` addresses, and only with your own OmniRoute key.
 
+### How replies keep going when the app is closed
+
+A web app stops running when it's closed, so the work happens on Netlify instead:
+
+1. The app sends the request to `/api/jobs` (an edge function). It saves the request in [Netlify Blobs](https://docs.netlify.com/build/data-and-storage/netlify-blobs/) and starts the `run-job` [background function](https://docs.netlify.com/build/functions/background-functions/), which can run for up to 15 minutes whether or not anyone is watching.
+2. That function streams the reply from OpenRouter (or your OmniRoute gateway) and saves it as it arrives.
+3. The app reads the progress about once a second, so you still see the reply being written. If the app was closed, it picks the reply up when it opens again.
+
+Your keys go only with the request that starts a reply and are never stored. The saved request is deleted as soon as the reply starts, a finished reply is deleted once the app has it, and anything left over is cleaned up after a day. Background functions and Blobs are included in Netlify's free plan. When the server can't run a reply (when running locally with `npm run dev`, or with an OmniRoute address only your computer can reach, like `http://localhost:20128`), the app streams it directly as before, and it only finishes while the app is open. Edits in the Photo and Audio editors happen on your device and are instant.
+
 ### Free model limits
 
 - **Without credits:** about 20 messages a minute and 50 a day across free models.
@@ -103,6 +114,8 @@ Browser (SolidJS PWA)
 | `netlify/shared/proxy.ts` | Path allowlist and free-model guard for the site key |
 | `netlify/shared/read.ts` | Fetches public web pages and turns them into text |
 | `netlify/shared/gateway.ts` | Proxy to your OmniRoute gateway (public https only, unit tested) |
+| `netlify/shared/jobs.ts`, `netlify/functions/run-job.mts` | Replies that run on the server and keep going when the app is closed (unit tested) |
+| `src/lib/jobs.ts` | Starts server replies and follows their progress |
 | `src/lib/route.ts` | Decides whether OmniRoute is reached through the proxy or directly |
 | `src/lib/design.ts`, `src/components/design/` | Design studio: design types, prompts, reading designs out of replies (unit tested) |
 | `src/lib/cowork.ts`, `src/lib/coworkspace.ts`, `src/components/cowork/` | Cowork: file types, CSV, Word text, what the AI sees (unit tested); files, folders, zip, AI |

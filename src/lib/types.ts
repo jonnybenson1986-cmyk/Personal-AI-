@@ -28,6 +28,8 @@ export interface Reply {
   thinking: string
   status: ReplyStatus
   error?: string
+  /** The server job generating this reply, so it can be picked up again after the app closes. */
+  job?: string
   /** Set once this reply's file changes were pushed to GitHub. */
   pushed?: { commitUrl: string; branchUrl: string; branch: string; pullRequestUrl?: string }
   createdAt: number
@@ -84,6 +86,8 @@ export interface Settings {
   system: string
   theme: "system" | "light" | "dark"
   models: ModelRef[]
+  /** Generate replies on the site's server, so they finish even if the app is closed. */
+  background: boolean
 }
 
 export interface StreamEvents {

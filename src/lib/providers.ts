@@ -4,6 +4,7 @@
 import OpenAI from "openai"
 import { type ChatMessage, chatMessages } from "./history"
 import { filterFreeModels, filterGatewayModels, type GatewayModel, type OpenRouterModel } from "./models"
+import { followJob, JobError, restartEvents, startJob } from "./jobs"
 import { gatewayRoute } from "./route"
 import { findTool } from "./tools"
 import type { Conversation, ModelInfo, ModelRef, Provider, StreamEvents, StreamResult, Turn } from "./types"
@@ -13,6 +14,13 @@ export interface Credentials {
   provider?: Provider
   omnirouteUrl?: string
   omnirouteKey?: string
+  /** Run replies on the server when the caller can pick them up again (default on). */
+  background?: boolean
+}
+
+/** Lets a caller save the id of a reply running on the server, to pick it up again later. */
+export interface JobHooks {
+  started(id: string): void
 }
 
 // With a key from Settings the SDK sends it and the proxy passes it on; without one, the
@@ -52,6 +60,7 @@ export interface StreamRequest {
   credentials: Credentials
   signal: AbortSignal
   events: StreamEvents
+  job?: JobHooks
 }
 
 // OpenRouter extends chat-completion chunks with reasoning text and in-stream errors.
@@ -73,10 +82,26 @@ export async function streamReply(req: StreamRequest): Promise<StreamResult> {
     events: req.events,
     // OpenRouter's reasoning control; models that don't reason ignore it.
     reasoning: !!findTool(req.current.tool)?.reasoning,
+    job: req.job,
   })
 }
 
-/** Streams one chat completion from OpenRouter. */
+/** Where a reply can run on the server: OpenRouter, or an OmniRoute gateway the server can reach. */
+function backgroundRoute(c: Credentials) {
+  if (c.background === false) return undefined
+  if (c.provider !== "omniroute") return { provider: "openrouter" as const }
+  const route = gatewayRoute(c.omnirouteUrl ?? "")
+  return route?.mode === "proxy" ? { provider: "omniroute" as const, omnirouteUrl: route.base } : undefined
+}
+
+function noteGateway(c: Credentials) {
+  lastGateway = c.provider === "omniroute" ? gatewayRoute(c.omnirouteUrl ?? "") : undefined
+}
+
+/**
+ * Streams one chat completion. With `job` hooks it runs on the server when it can, so it
+ * finishes even if the app closes; the caller saves the id and calls `resumeChat` later.
+ */
 export async function streamChat(req: {
   messages: ChatMessage[]
   model: ModelRef
@@ -84,7 +109,23 @@ export async function streamChat(req: {
   signal: AbortSignal
   events: StreamEvents
   reasoning?: boolean
+  job?: JobHooks
 }): Promise<StreamResult> {
+  const where = req.job && backgroundRoute(req.credentials)
+  if (where) {
+    noteGateway(req.credentials)
+    const id = await startJob(
+      {
+        input: { ...where, model: req.model.id, messages: req.messages, reasoning: req.reasoning },
+        secrets: req.credentials.provider === "omniroute" ? { omnirouteKey: req.credentials.omnirouteKey?.trim() } : { openrouterKey: req.credentials.openrouterKey.trim() || undefined },
+      },
+      req.signal,
+    )
+    if (id) {
+      req.job!.started(id)
+      return followJob(id, req.events, req.signal)
+    }
+  }
   const stream = await client(req.credentials).chat.completions.create(
     {
       model: req.model.id,
@@ -117,6 +158,15 @@ export async function streamChat(req: {
   return { notice }
 }
 
+/**
+ * Picks up a reply that was running on the server (after the app was closed, say). It comes
+ * from the start again, so `clear` is called to drop the partial copy first.
+ */
+export function resumeChat(id: string, credentials: Credentials, events: StreamEvents, signal: AbortSignal, clear: () => void) {
+  noteGateway(credentials)
+  return followJob(id, restartEvents(events, clear), signal)
+}
+
 /** OmniRoute's full model list (including image and audio models) from the last load. */
 export let lastGatewayModels: GatewayModel[] = []
 
@@ -145,9 +195,11 @@ export async function hasServerKey() {
 
 export function errorMessage(error: unknown) {
   let message = error instanceof Error ? error.message : String(error)
-  if (error instanceof OpenAI.APIError) {
-    const body = error.error as { error?: { message?: string }; message?: string } | undefined
-    message = body?.error?.message ?? body?.message ?? error.message
+  if (error instanceof OpenAI.APIError || error instanceof JobError) {
+    if (error instanceof OpenAI.APIError) {
+      const body = error.error as { error?: { message?: string }; message?: string } | undefined
+      message = body?.error?.message ?? body?.message ?? error.message
+    }
     if (error.status === 401 && !/Settings/.test(message))
       return lastGateway ? "OmniRoute didn't accept the API key. Check it in Settings → OmniRoute." : "OpenRouter didn't accept the key. Check it in Settings → OpenRouter key."
     if (error instanceof OpenAI.APIConnectionError && lastGateway?.mode === "direct")

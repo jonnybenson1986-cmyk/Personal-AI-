@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createResource, createSignal, For, onMount, Show, untrack } from "solid-js"
 import { setCanvas } from "../../lib/canvas"
 import { parseFileChanges } from "../../lib/changes"
-import { aiBusy, applyReply, askAI, clearChat, stopAI } from "../../lib/codeai"
+import { aiBusy, applyReply, askAI, clearChat, resumeCodeAI, stopAI } from "../../lib/codeai"
 import { diffStats } from "../../lib/diff"
 import { branchName, parseRepo } from "../../lib/github"
 import { renderMarkdown } from "../../lib/markdown"
@@ -541,7 +541,12 @@ export default function CodeView(props: { onMenu: () => void }) {
   const [terminal, setTerminal] = createSignal(true)
   const [sheet, setSheet] = createSignal(false)
   const [restored, setRestored] = createSignal(false)
-  onMount(() => void restoreWorkspace().finally(() => setRestored(true)))
+  onMount(() =>
+    void restoreWorkspace().finally(() => {
+      setRestored(true)
+      resumeCodeAI()
+    }),
+  )
   const pending = () => changeList().length + ws.commits.length
 
   const open = (path: string) => {

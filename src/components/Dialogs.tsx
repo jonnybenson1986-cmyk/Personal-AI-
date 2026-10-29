@@ -169,6 +169,21 @@ export function SettingsDialog(props: { onClose: () => void }) {
         value={settings.githubToken}
         onSave={(githubToken) => updateSettings({ githubToken })}
       />
+      <div class="field">
+        <span>Keep working when the app is closed</span>
+        <small>
+          Replies are written on this site's server, so they finish even if you close the app or lock your phone, and are waiting when you come back. Your
+          keys are only used for the request and never stored.{settings.provider === "omniroute" ? " Needs a public https:// OmniRoute address; a local one works only while the app is open." : ""}
+        </small>
+        <Segmented<"on" | "off">
+          value={settings.background === false ? "off" : "on"}
+          options={[
+            { value: "on", label: "On" },
+            { value: "off", label: "Off" },
+          ]}
+          onChange={(v) => updateSettings({ background: v === "on" })}
+        />
+      </div>
       <h3 class="section">App</h3>
       <label class="field">
         <span>Custom instructions</span>
