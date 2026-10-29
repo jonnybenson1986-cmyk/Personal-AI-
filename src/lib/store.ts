@@ -1,7 +1,7 @@
 import { createStore, produce, reconcile } from "solid-js/store"
 import { createSignal } from "solid-js"
 import { del, get, set } from "idb-keyval"
-import { DEFAULT_SELECTION } from "./models"
+import { DEFAULT_SELECTION, GATEWAY_AUTO } from "./models"
 import { errorMessage, isAbort, streamReply } from "./providers"
 import type { Attachment, Conversation, ModelRef, RepoTarget, Reply, Settings, Turn } from "./types"
 
@@ -12,6 +12,9 @@ const convKey = (id: string) => `conversation:${id}`
 export const uid = () => crypto.randomUUID()
 
 const defaults: Settings = {
+  provider: "openrouter",
+  omnirouteUrl: "",
+  omnirouteKey: "",
   openrouterKey: "",
   githubToken: "",
   recentRepos: [],
@@ -24,7 +27,8 @@ function loadSettings(): Settings {
   try {
     const stored = { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}") } as Settings
     // Model choices saved before the switch to OpenRouter (bare ids like "claude-opus-5-5") no longer exist.
-    if (!Array.isArray(stored.models) || !stored.models.length || !stored.models.every((m) => m?.id?.includes("/"))) stored.models = DEFAULT_SELECTION
+    if (!Array.isArray(stored.models) || !stored.models.length || (stored.provider !== "omniroute" && !stored.models.every((m) => m?.id?.includes("/"))))
+      stored.models = stored.provider === "omniroute" ? [{ id: GATEWAY_AUTO }] : DEFAULT_SELECTION
     return stored
   } catch {
     return defaults

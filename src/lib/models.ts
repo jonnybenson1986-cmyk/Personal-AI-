@@ -52,3 +52,39 @@ export function filterFreeModels(list: OpenRouterModel[]): ModelInfo[] {
     .sort((a, b) => a.label.localeCompare(b.label))
   return free.length ? [DEFAULT_MODELS[0], ...free] : []
 }
+
+/** OmniRoute's own router: picks a model from your connected providers for each request. */
+export const GATEWAY_AUTO = "auto"
+
+export interface GatewayModel {
+  id: string
+  type?: string
+  display_name?: string
+  owned_by?: string
+  context_length?: number
+  input_modalities?: string[]
+  capabilities?: { vision?: boolean }
+}
+
+// Image, audio, embedding and similar models can't chat.
+const NOT_GATEWAY_CHAT = new Set(["embedding", "image", "rerank", "audio", "moderation", "video", "music", "tts", "stt"])
+
+/** The chat models (and combos) from an OpenAI-compatible gateway's model list, auto first. */
+export function filterGatewayModels(list: GatewayModel[]): ModelInfo[] {
+  const models = list
+    .filter((m) => typeof m.id === "string" && (!m.type || !NOT_GATEWAY_CHAT.has(m.type)))
+    .map((m): ModelInfo => {
+      const vision = m.capabilities?.vision === true || !!m.input_modalities?.includes("image")
+      const context = m.context_length ? `${Math.round(m.context_length / 1000)}K context` : undefined
+      const kind = m.owned_by === "combo" ? "Combo" : undefined
+      return {
+        id: m.id,
+        label: m.id === GATEWAY_AUTO ? "Auto (OmniRoute picks)" : (m.display_name ?? m.id),
+        hint: m.id === GATEWAY_AUTO ? "Routes each message across your connected providers" : [kind, vision ? "Sees images" : undefined, context].filter(Boolean).join(" · ") || undefined,
+        vision,
+      }
+    })
+  const auto = models.filter((m) => m.id === GATEWAY_AUTO || m.id.startsWith(`${GATEWAY_AUTO}/`))
+  const rest = models.filter((m) => !auto.includes(m)).sort((a, b) => a.label.localeCompare(b.label))
+  return [...auto, ...rest]
+}

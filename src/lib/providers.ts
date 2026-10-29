@@ -1,20 +1,41 @@
-// Talks to OpenRouter's OpenAI-compatible API through the edge proxy, using the official
-// `openai` SDK, and normalizes the stream into StreamEvents.
+// Talks to an OpenAI-compatible API with the official `openai` SDK: OpenRouter's free models
+// through the edge proxy, or the user's own OmniRoute gateway. Normalizes the stream into
+// StreamEvents.
 import OpenAI from "openai"
 import { type ChatMessage, chatMessages } from "./history"
-import { filterFreeModels, type OpenRouterModel } from "./models"
+import { filterFreeModels, filterGatewayModels, type GatewayModel, type OpenRouterModel } from "./models"
+import { gatewayRoute } from "./route"
 import { findTool } from "./tools"
-import type { Conversation, ModelInfo, ModelRef, StreamEvents, StreamResult, Turn } from "./types"
+import type { Conversation, ModelInfo, ModelRef, Provider, StreamEvents, StreamResult, Turn } from "./types"
 
 export interface Credentials {
   openrouterKey: string
+  provider?: Provider
+  omnirouteUrl?: string
+  omnirouteKey?: string
 }
 
 // With a key from Settings the SDK sends it and the proxy passes it on; without one, the
 // placeholder asks the proxy to use the site's own key (free models only).
 const PLACEHOLDER_KEY = "set-on-server"
 
+// Remembered for error messages, which don't otherwise know where a request went.
+let lastGateway: { mode: "proxy" | "direct"; base: string } | undefined
+
 function client(c: Credentials) {
+  if (c.provider === "omniroute") {
+    const route = gatewayRoute(c.omnirouteUrl ?? "")
+    if (!route) throw new Error("Add your OmniRoute address in Settings.")
+    lastGateway = route
+    return new OpenAI({
+      baseURL: route.mode === "direct" ? `${route.base}/v1` : `${location.origin}/api/omniroute/v1`,
+      apiKey: c.omnirouteKey?.trim() || "no-key",
+      defaultHeaders: route.mode === "proxy" ? { "x-omniroute-url": route.base } : undefined,
+      dangerouslyAllowBrowser: true,
+      maxRetries: 1,
+    })
+  }
+  lastGateway = undefined
   return new OpenAI({
     baseURL: `${location.origin}/api/openrouter/v1`,
     apiKey: c.openrouterKey.trim() || PLACEHOLDER_KEY,
@@ -69,7 +90,8 @@ export async function streamChat(req: {
       model: req.model.id,
       messages: req.messages as OpenAI.Chat.ChatCompletionMessageParam[],
       stream: true,
-      ...(req.reasoning ? { reasoning: { effort: "high" } } : {}),
+      // OpenRouter's reasoning control, or the standard OpenAI field for a gateway.
+      ...(req.reasoning ? (req.credentials.provider === "omniroute" ? { reasoning_effort: "high" } : { reasoning: { effort: "high" } }) : {}),
     } as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
     { signal: req.signal },
   )
@@ -95,15 +117,18 @@ export async function streamChat(req: {
   return { notice }
 }
 
-/** Free chat models from OpenRouter's live list. Needs no key. */
-export async function listModels(): Promise<ModelInfo[]> {
+/** Free chat models from OpenRouter's live list (needs no key), or the gateway's models. */
+export async function listModels(credentials?: Credentials): Promise<ModelInfo[]> {
+  if (credentials?.provider === "omniroute") {
+    const page = await client(credentials).models.list()
+    return filterGatewayModels(page.data as unknown as GatewayModel[])
+  }
   const res = await fetch("/api/openrouter/v1/models")
   if (!res.ok) throw new Error(`Model list failed: ${res.status}`)
   const body = (await res.json()) as { data: OpenRouterModel[] }
   return filterFreeModels(body.data)
 }
 
-/** Whether the site has its own OpenRouter key (set on Netlify). */
 export async function hasServerKey() {
   try {
     const res = await fetch("/api/status")
@@ -119,7 +144,11 @@ export function errorMessage(error: unknown) {
   if (error instanceof OpenAI.APIError) {
     const body = error.error as { error?: { message?: string }; message?: string } | undefined
     message = body?.error?.message ?? body?.message ?? error.message
-    if (error.status === 401 && !/Settings/.test(message)) return "OpenRouter didn't accept the key. Check it in Settings → OpenRouter key."
+    if (error.status === 401 && !/Settings/.test(message))
+      return lastGateway ? "OmniRoute didn't accept the API key. Check it in Settings → OmniRoute." : "OpenRouter didn't accept the key. Check it in Settings → OpenRouter key."
+    if (error instanceof OpenAI.APIConnectionError && lastGateway?.mode === "direct")
+      return `Couldn't reach OmniRoute at ${lastGateway.base}. Check it's running, and that it allows this site: start it with CORS_ALLOWED_ORIGINS=${location.origin}`
+    if (lastGateway) return message
     if (error.status === 429) return "Free-model limit reached for now. Wait a minute, or try another model. (Free models allow about 20 messages a minute and 50 a day.)"
   }
   // Some free models are only offered to accounts that allow providers to use prompts.

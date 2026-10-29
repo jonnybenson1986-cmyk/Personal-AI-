@@ -66,7 +66,15 @@ export interface Conversation {
   updatedAt: number
 }
 
+export type Provider = "openrouter" | "omniroute"
+
 export interface Settings {
+  /** Where chats go: OpenRouter's free models, or the user's own OmniRoute gateway. */
+  provider: Provider
+  /** OmniRoute's address, e.g. https://abc.trycloudflare.com or http://localhost:20128. */
+  omnirouteUrl: string
+  /** An OmniRoute API key (Dashboard → Endpoints). Stored on this device only. */
+  omnirouteKey: string
   /** The user's OpenRouter key. Stored on this device only. */
   openrouterKey: string
   /** Optional GitHub token for private repos. Stored on this device only. */

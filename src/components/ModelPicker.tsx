@@ -65,7 +65,7 @@ export function ModelPicker() {
             <For each={compare() ? [0, 1] : [0]}>
               {(slot) => (
                 <div class="picker-column">
-                  <div class="picker-heading">{compare() ? (slot === 0 ? "Left" : "Right") : "Free models"}</div>
+                  <div class="picker-heading">{compare() ? (slot === 0 ? "Left" : "Right") : settings.provider === "omniroute" ? "OmniRoute models" : "Free models"}</div>
                   <For each={catalog()}>
                     {(m) => (
                       <button class="picker-item" role="menuitem" onClick={() => choose(m, slot)}>

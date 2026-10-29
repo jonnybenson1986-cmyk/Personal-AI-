@@ -142,12 +142,21 @@ export function Sidebar(props: { open: boolean; onClose: () => void; onSettings:
         </nav>
         <div class="sidebar-bottom">
           <Show when={!standalone()}>
-            <button class="side-button" onClick={() => (canInstall() ? void install() : props.onInstallHelp())}>
+            <button class="side-button" onClick={() => {
+              props.onClose()
+              canInstall() ? void install() : props.onInstallHelp()
+            }}>
               <IconDownload />
               Install app
             </button>
           </Show>
-          <button class="side-button" onClick={props.onSettings}>
+          <button
+            class="side-button"
+            onClick={() => {
+              props.onClose()
+              props.onSettings()
+            }}
+          >
             <IconSettings />
             Settings
           </button>

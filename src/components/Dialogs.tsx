@@ -1,8 +1,10 @@
 import { createSignal, type JSX, Show } from "solid-js"
-import { canChat, refreshStatus } from "../lib/catalog"
+import { canChat, catalog, gatewayError, refreshCatalog, refreshStatus } from "../lib/catalog"
+import { DEFAULT_SELECTION, GATEWAY_AUTO } from "../lib/models"
+import { gatewayRoute } from "../lib/route"
 import { isIOS } from "../lib/install"
 import { clearAll, settings, updateSettings } from "../lib/store"
-import type { Settings } from "../lib/types"
+import type { Provider, Settings } from "../lib/types"
 import { IconX } from "./icons"
 
 export function Modal(props: { title: string; onClose: () => void; children: JSX.Element }) {
@@ -51,6 +53,70 @@ function KeyField(props: { label: string; hint: string; value: string; placehold
   )
 }
 
+function OmniRouteFields(props: { onSave: (patch: Partial<Settings>) => void }) {
+  const [testing, setTesting] = createSignal(false)
+  const [result, setResult] = createSignal<string>()
+  const route = () => gatewayRoute(settings.omnirouteUrl)
+  async function test() {
+    setTesting(true)
+    setResult(undefined)
+    const count = await refreshCatalog(settings)
+    setResult(count ? `Connected: ${count} model${count === 1 ? "" : "s"} available.` : undefined)
+    setTesting(false)
+  }
+  return (
+    <>
+      <p class="muted small-text">
+        OmniRoute is a free AI gateway you run yourself. It connects many providers' free tiers behind one endpoint, with automatic fallback.
+        Install it with <code>npm install -g omniroute</code>, run <code>omniroute</code>, and connect providers in its dashboard.
+      </p>
+      <label class="field">
+        <span>OmniRoute address</span>
+        <small>
+          From your phone: turn on the Cloudflare tunnel in OmniRoute's Dashboard → Endpoints and paste its https address. On the computer running it:
+          http://localhost:20128.
+        </small>
+        <input
+          class="text-input"
+          type="url"
+          inputmode="url"
+          autocapitalize="off"
+          spellcheck={false}
+          placeholder="https://your-tunnel.trycloudflare.com"
+          value={settings.omnirouteUrl}
+          onChange={(e) => props.onSave({ omnirouteUrl: e.currentTarget.value.trim() })}
+        />
+      </label>
+      <Show when={route()?.mode === "direct"}>
+        <div class="notice">
+          This address is reached straight from your browser, so OmniRoute must allow this site. Start it with{" "}
+          <code>CORS_ALLOWED_ORIGINS={location.origin}</code>. To use it from your phone, use the tunnel's https address instead.
+        </div>
+      </Show>
+      <KeyField
+        label="OmniRoute API key"
+        hint="OmniRoute Dashboard → Endpoints → copy an API key. Saved only on this device."
+        placeholder="Your OmniRoute key"
+        value={settings.omnirouteKey}
+        onSave={(omnirouteKey) => props.onSave({ omnirouteKey })}
+      />
+      <div class="inline">
+        <button class="button ghost" disabled={testing() || !settings.omnirouteUrl || !settings.omnirouteKey} onClick={() => void test()}>
+          {testing() ? "Testing…" : "Test connection"}
+        </button>
+        <span class="small-text key-status">
+          <Show when={result()} fallback={<Show when={gatewayError()}>{(e) => <span class="error-text">{e()}</span>}</Show>}>
+            {result()}
+          </Show>
+        </span>
+      </div>
+      <Show when={!result() && !gatewayError() && catalog().length > 1}>
+        <p class="small-text key-status">{catalog().length} models available.</p>
+      </Show>
+    </>
+  )
+}
+
 export function SettingsDialog(props: { onClose: () => void }) {
   const save = (patch: Parameters<typeof updateSettings>[0]) => {
     updateSettings(patch)
@@ -59,19 +125,43 @@ export function SettingsDialog(props: { onClose: () => void }) {
   return (
     <Modal title="Settings" onClose={props.onClose}>
       <h3 class="section">AI</h3>
-      <p class="muted small-text">
-        Jonny's AI project uses free open models (Gemma, Nemotron, MiniMax and more) through OpenRouter. A free OpenRouter key is all it needs.
-      </p>
-      <KeyField
-        label="OpenRouter key"
-        hint="Free: sign up at openrouter.ai, then Settings → API Keys → Create. No card needed. Saved only on this device."
-        placeholder="sk-or-…"
-        value={settings.openrouterKey}
-        onSave={(openrouterKey) => save({ openrouterKey })}
-      />
-      <p class="small-text key-status">
-        Status: <strong>{canChat() ? "ready" : "add a key to start"}</strong>
-      </p>
+      <div class="field">
+        <span>AI provider</span>
+        <Segmented<Provider>
+          value={settings.provider}
+          options={[
+            { value: "openrouter", label: "OpenRouter (free)" },
+            { value: "omniroute", label: "OmniRoute" },
+          ]}
+          onChange={(provider) => {
+            // Model names differ between providers, so start each one on its own auto model.
+            updateSettings({ provider, models: provider === "omniroute" ? [{ id: GATEWAY_AUTO }] : DEFAULT_SELECTION })
+            void refreshStatus(settings)
+          }}
+        />
+      </div>
+      <Show
+        when={settings.provider === "omniroute"}
+        fallback={
+          <>
+            <p class="muted small-text">
+              Free open models (Gemma, Nemotron, MiniMax and more) through OpenRouter. A free OpenRouter key is all it needs.
+            </p>
+            <KeyField
+              label="OpenRouter key"
+              hint="Free: sign up at openrouter.ai, then Settings → API Keys → Create. No card needed. Saved only on this device."
+              placeholder="sk-or-…"
+              value={settings.openrouterKey}
+              onSave={(openrouterKey) => save({ openrouterKey })}
+            />
+            <p class="small-text key-status">
+              Status: <strong>{canChat() ? "ready" : "add a key to start"}</strong>
+            </p>
+          </>
+        }
+      >
+        <OmniRouteFields onSave={save} />
+      </Show>
       <KeyField
         label="GitHub token"
         hint="Needed to push changes, and for private repos. github.com → Settings → Developer settings → Fine-grained tokens → choose your repos → Permissions: Contents and Pull requests set to Read and write. Saved only on this device."

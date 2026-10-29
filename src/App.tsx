@@ -100,6 +100,7 @@ export function App() {
                         <button class="button primary wide" onClick={() => setShowSettings(true)}>
                           Add your free key
                         </button>
+                        <p class="muted small-text">Running your own OmniRoute gateway? Choose it under Settings → AI provider.</p>
                       </div>
                     </div>
                   }

@@ -2,6 +2,7 @@
 
 A personal AI chat, coding and research app that runs on **free open models** (Google Gemma, NVIDIA Nemotron, MiniMax and more) through [OpenRouter](https://openrouter.ai). Deploy it to Netlify and install it on your phone or computer.
 
+- **Two AI providers** (Settings → AI provider): OpenRouter's free models, or your own **[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** gateway, which puts 300+ providers (150+ with free tiers) behind one endpoint with automatic fallback.
 - **Auto (free)** picks an available free model for each message, or you can choose a specific one. The model list is live, so new free models appear on their own.
 - **Compare side by side:** send one message to two models at once.
 - **The + menu** adds context and tools to a message:
@@ -50,6 +51,18 @@ Pushing needs a GitHub token, saved only on your device:
 
 If the repo is this site's own repo, anything pushed to `main` goes live on Netlify, so the default is a branch plus pull request: review it on GitHub, then merge.
 
+### Using your own OmniRoute gateway
+
+[OmniRoute](https://github.com/diegosouzapw/OmniRoute) (MIT) is a free AI gateway you run yourself. It connects many providers' free tiers and your own accounts behind one OpenAI-compatible endpoint, and falls back between them automatically. It's a server, so it runs on your computer, an Android phone (Termux), Docker or a cloud host, not on Netlify. Jonny's AI connects to it.
+
+1. Install and start it: `npm install -g omniroute`, then `omniroute`. The dashboard opens at http://localhost:20128.
+2. In its dashboard, connect a few providers under **Providers**, then copy an API key from **Endpoints**.
+3. In Jonny's AI, open **Settings → AI provider → OmniRoute** and enter the address and key, then tap **Test connection**:
+   - **From your phone or anywhere:** turn on the **Cloudflare tunnel** in OmniRoute's Dashboard → Endpoints and use its `https://…` address. Requests go through this site's server, so OmniRoute needs no extra settings.
+   - **On the computer running OmniRoute:** use `http://localhost:20128`. The browser talks to it directly, so start OmniRoute with `CORS_ALLOWED_ORIGINS=https://your-site.netlify.app`.
+
+The model picker then lists OmniRoute's models and combos, with **Auto** first. Chat, the AI tools and the Code workspace's AI all use it. The site's proxy only forwards the model list and chat, only to public `https://` addresses, and only with your own OmniRoute key.
+
 ### Free model limits
 
 - **Without credits:** about 20 messages a minute and 50 a day across free models.
@@ -85,6 +98,8 @@ Browser (SolidJS PWA)
 | `netlify/edge-functions/` | `openrouter` proxy, `read` (web pages) and `status` |
 | `netlify/shared/proxy.ts` | Path allowlist and free-model guard for the site key |
 | `netlify/shared/read.ts` | Fetches public web pages and turns them into text |
+| `netlify/shared/gateway.ts` | Proxy to your OmniRoute gateway (public https only, unit tested) |
+| `src/lib/route.ts` | Decides whether OmniRoute is reached through the proxy or directly |
 
 ## Deploy to Netlify
 
