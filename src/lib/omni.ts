@@ -61,6 +61,41 @@ export const SETUP_OPTIONS: SetupOption[] = [
   },
 ]
 
+/** The Docker image every cloud option runs. */
+export const OMNI_IMAGE = "diegosouzapw/omniroute:latest"
+
+/**
+ * Settings for running OmniRoute on a cloud host. A public server needs its secrets set up
+ * front: otherwise whoever opens the dashboard first sets its password. `random(n)` returns n
+ * random bytes (crypto.getRandomValues in the app).
+ */
+export function cloudEnv(random: (n: number) => Uint8Array) {
+  const hex = (n: number) => [...random(n)].map((b) => b.toString(16).padStart(2, "0")).join("")
+  const password = [...random(12)].map((b) => "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"[b % 55]).join("")
+  return {
+    password,
+    env: [`DATA_DIR=/data`, `PORT=${OMNI_PORT}`, `JWT_SECRET=${hex(32)}`, `API_KEY_SECRET=${hex(32)}`, `INITIAL_PASSWORD=${password}`].join("\n"),
+  }
+}
+
+/** Running OmniRoute without a computer: a cloud host, set up from the phone's browser. */
+export function cloudSteps(env: string): SetupStep[] {
+  return [
+    {
+      title: "Pick a cloud host that runs Docker images",
+      text: "It needs to run a Docker image, give it a public https address, and keep a persistent disk (volume), so your providers and keys survive restarts. Railway, Render, Fly.io and Koyeb all do this; an always-on server with a disk usually needs a small paid plan. Everything below works from Safari on your iPhone.",
+    },
+    { title: "Create a new service from this Docker image", code: OMNI_IMAGE },
+    { title: "Set the port to 20128 and add a volume mounted at /data", text: "The port is where OmniRoute listens; the volume is where it keeps its database." },
+    {
+      title: "Add these environment variables",
+      text: "Made just now on this device, so they're yours alone. Keep the password: it unlocks OmniRoute's dashboard. (Leaving them out would let anyone who finds the address set the password first.)",
+      code: env,
+    },
+    { title: "Deploy, then open the dashboard", text: "At https://<your service's address>/dashboard, signed in with the INITIAL_PASSWORD above." },
+  ]
+}
+
 /** After installing: the same on every device. */
 export function connectSteps(origin: string): SetupStep[] {
   return [
@@ -74,7 +109,7 @@ export function connectSteps(origin: string): SetupStep[] {
     },
     {
       title: "Make it reachable from this app",
-      text: "Anywhere (phone, other networks): Dashboard → Endpoints → turn on Cloudflare Quick Tunnel and copy its https://….trycloudflare.com address. It changes each time OmniRoute restarts. Only on the computer running OmniRoute: use the local address, and start OmniRoute so it allows this site:",
+      text: "On a cloud host: use its https address, nothing more to do. On your own computer, from anywhere (phone, other networks): Dashboard → Endpoints → turn on Cloudflare Quick Tunnel and copy its https://….trycloudflare.com address. It changes each time OmniRoute restarts. Only on the computer running OmniRoute: use the local address, and start OmniRoute so it allows this site:",
       code: `CORS_ALLOWED_ORIGINS=${origin} omniroute`,
     },
     { title: "Connect it below", text: "Paste the address and key, then Test connection. Chat, Code, Design, Cowork, Photo, Audio and the Omni tools then use it." },

@@ -3273,3 +3273,13 @@ button:disabled {
 .omni-table {
   width: 100%;
 }
+
+/* iPhone and iPad: Safari zooms into any text box with text smaller than 16px when it's tapped. */
+@supports (-webkit-touch-callout: none) {
+  input,
+  textarea,
+  select,
+  .cm-content {
+    font-size: max(16px, 1em) !important;
+  }
+}

@@ -140,6 +140,15 @@ In Netlify, choose **Add new site → Import an existing project** and pick this
 - **iPhone / iPad:** in Safari, tap **Share** → **Add to Home Screen**.
 - **Safari on Mac:** **File → Add to Dock**.
 
+### On iPhone
+
+1. Open the site in **Safari**, tap **Share** → **Add to Home Screen** → **Add**. It opens full screen like an app.
+2. Chat, Code, Design, Cowork, Photo and Audio work straight away when the site has `OPENROUTER_API_KEY` set on Netlify (no key to paste on the phone). Replies keep going on the server when you leave the app.
+3. To push code to GitHub from the phone, add a GitHub token in **Settings**.
+4. For OmniRoute: an iPhone can't run it, so open **Omni → Set up → iPhone / cloud**. It walks through running OmniRoute on a cloud host from Safari, with its secrets and dashboard password generated on the phone, or connecting to one running on your computer through its Cloudflare tunnel.
+
+On iPhone, Download buttons in the home-screen app open the share sheet (Save to Files, Save Image…), and text boxes no longer zoom the page when tapped.
+
 ## Run locally
 
 ```bash

@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js"
+import { isIOS, isStandalone } from "./device"
 
 export interface CanvasDoc {
   title: string
@@ -11,6 +12,22 @@ export const [canvas, setCanvas] = createSignal<CanvasDoc>()
 
 export function download(name: string, data: Blob | string, type = "text/plain") {
   const blob = typeof data === "string" ? new Blob([data], { type }) : data
+  // In an app added to an iPhone's home screen, a download link opens a dead-end viewer; the
+  // share sheet (Save to Files, Save Image…) is the way to keep a file there.
+  if (isIOS() && isStandalone()) {
+    const file = new File([blob], name, { type: blob.type || type })
+    if (navigator.canShare?.({ files: [file] })) {
+      navigator.share({ files: [file] }).catch((e: DOMException) => {
+        // Only when sharing wasn't allowed (e.g. no recent tap) fall back to the link.
+        if (e?.name === "NotAllowedError") linkDownload(name, blob)
+      })
+      return
+    }
+  }
+  linkDownload(name, blob)
+}
+
+function linkDownload(name: string, blob: Blob) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url

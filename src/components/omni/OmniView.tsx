@@ -6,7 +6,10 @@ import { download } from "../../lib/canvas"
 import { DETACH } from "../../lib/jobs"
 import { renderMarkdown } from "../../lib/markdown"
 import { GATEWAY_AUTO } from "../../lib/models"
+import { isIOS } from "../../lib/device"
 import {
+  cloudEnv,
+  cloudSteps,
   connectSteps,
   decisionLabel,
   FREE_PROVIDERS,
@@ -225,9 +228,15 @@ export default function OmniView(props: { onMenu: () => void }) {
   )
 }
 
+const CLOUD = { id: "cloud", label: "iPhone / cloud", hint: "No computer needed: a cloud server you set up from your phone" }
+
 function Setup(props: { status: { models: number; version?: string } | { error: string } | undefined; onTest: () => void }) {
-  const [device, setDevice] = createSignal(SETUP_OPTIONS[0].id)
-  const option = () => SETUP_OPTIONS.find((o) => o.id === device())!
+  // An iPhone can't run OmniRoute itself, so it starts on the cloud option.
+  const [device, setDevice] = createSignal(isIOS() ? CLOUD.id : SETUP_OPTIONS[0].id)
+  // Fresh secrets for this visit, made on the device.
+  const cloud = cloudEnv((n) => crypto.getRandomValues(new Uint8Array(n)))
+  const options = [CLOUD, ...SETUP_OPTIONS]
+  const option = () => (device() === CLOUD.id ? { ...CLOUD, steps: cloudSteps(cloud.env) } : SETUP_OPTIONS.find((o) => o.id === device())!)
   const [usage, setUsage] = createSignal<ReturnType<typeof usageSummary> | { error: string }>()
   const route = () => gatewayRoute(settings.omnirouteUrl)
   const steps = createMemo(() => connectSteps(location.origin))
@@ -252,7 +261,7 @@ function Setup(props: { status: { models: number; version?: string } | { error: 
         <h3>1. Install and start it</h3>
         <p class="small-text muted">Where will OmniRoute run?</p>
         <div class="chips">
-          <For each={SETUP_OPTIONS}>
+          <For each={options}>
             {(o) => (
               <button class="chip" classList={{ on: device() === o.id }} title={o.hint} onClick={() => setDevice(o.id)}>
                 {o.label}
@@ -260,6 +269,13 @@ function Setup(props: { status: { models: number; version?: string } | { error: 
             )}
           </For>
         </div>
+        <p class="small-text muted">{option().hint}</p>
+        <Show when={device() === CLOUD.id}>
+          <p class="small-text">
+            An iPhone can't run OmniRoute itself: it needs a server that stays on. Either put it on a cloud host (below), or run it on a computer you leave on (the
+            Computer option) and reach it from your iPhone through its Cloudflare tunnel.
+          </p>
+        </Show>
         <ol class="omni-steps">
           <For each={option().steps}>
             {(s) => (
