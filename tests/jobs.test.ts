@@ -301,3 +301,11 @@ test("bad teams are refused before a job starts", async () => {
   assert.equal(bad.res.status, 400)
   assert.match(bad.json.error.message, /1 to 6 agents/)
 })
+
+test("OmniRoute's keepalive chunks don't count as the model that answered", async () => {
+  const { store, data } = memoryStore()
+  const { json } = await api(store, "POST", "/api/jobs", { input: { provider: "openrouter", model: "openrouter/free", messages: [{ role: "user", content: "hi" }] }, secrets: { openrouterKey: "sk-or-mine" } })
+  globalThis.fetch = (async () => new Response(sse({ model: "keepalive", choices: [{ delta: {} }] }, chunk("Hi")))) as unknown as typeof fetch
+  await runJob(json.id, { openrouterKey: "sk-or-mine" }, { store, env: env({}) })
+  assert.equal((data.get(`job/${json.id}`) as JobRecord).servedBy, "google/gemma:free")
+})

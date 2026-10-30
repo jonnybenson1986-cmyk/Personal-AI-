@@ -118,13 +118,25 @@ interface ChatRequest {
   job?: JobHooks
 }
 
-const FALLBACK_NOTICE = "OmniRoute couldn't be reached, so the free AI answered. Check it in Omni → Set up."
+/** Why the free AI answered instead of OmniRoute, shown under the reply. */
+function fallbackNotice(error: unknown) {
+  if (isUnreachable(error)) return "OmniRoute couldn't be reached, so the free AI answered. Check it in Omni → Set up."
+  const reason = (error instanceof Error ? error.message : String(error)).split(";")[0].slice(0, 160)
+  return `OmniRoute couldn't answer (${reason}), so the free AI did. Connect a working provider in OmniRoute's dashboard → Providers.`
+}
+
+/** OmniRoute refused the key itself: that needs fixing, so it isn't hidden behind the free AI. */
+function isAuthError(error: unknown) {
+  const status = error instanceof OpenAI.APIError || error instanceof JobError ? error.status : undefined
+  return status === 401 || status === 403
+}
 
 /**
  * Streams one chat completion. With `job` hooks it runs on the server when it can, so it
  * finishes even if the app closes; the caller saves the id and calls `resumeChat` later.
- * If OmniRoute can't be reached at all (not running, an address this device can't use) and
- * the free AI is available, the free AI answers instead, with a notice saying so.
+ * If OmniRoute fails before answering (not running, an address this device can't use, or no
+ * connected provider worked) and the free AI is available, the free AI answers instead, with a
+ * notice saying why. A rejected OmniRoute key is shown as it is, since it needs fixing.
  */
 export async function streamChat(req: ChatRequest): Promise<StreamResult> {
   let answered = false
@@ -139,9 +151,10 @@ export async function streamChat(req: ChatRequest): Promise<StreamResult> {
     return await streamOnce({ ...req, events })
   } catch (error) {
     const c = req.credentials
-    if (answered || c.provider !== "omniroute" || !isUnreachable(error) || !(c.openrouterKey.trim() || siteOpenRouter())) throw error
+    // Before any text: OmniRoute unreachable, or none of its providers could answer.
+    if (answered || c.provider !== "omniroute" || isAbort(error) || isAuthError(error) || !(c.openrouterKey.trim() || siteOpenRouter())) throw error
     const result = await streamOnce({ ...req, credentials: { ...c, provider: "openrouter" }, model: { id: AUTO_MODEL } })
-    return { ...result, notice: [FALLBACK_NOTICE, result.notice].filter(Boolean).join(" ") }
+    return { ...result, notice: [fallbackNotice(error), result.notice].filter(Boolean).join(" ") }
   }
 }
 
@@ -174,7 +187,8 @@ async function streamOnce(req: ChatRequest): Promise<StreamResult> {
     const chunk = raw as unknown as Chunk
     // Errors after the stream started arrive as a chunk with an `error` field.
     if (chunk.error) throw new Error(chunk.error.message ?? "The model stopped with an error.")
-    if (!served && chunk.model) {
+    // OmniRoute's "keepalive" chunks aren't from a model.
+    if (!served && chunk.model && chunk.model !== "keepalive") {
       served = true
       req.events.servedBy(chunk.model)
     }

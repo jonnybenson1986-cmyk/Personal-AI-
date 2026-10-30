@@ -28,7 +28,7 @@ export const SETUP_OPTIONS: SetupOption[] = [
     label: "Computer",
     hint: "Windows, Mac or Linux with Node.js",
     steps: [
-      { title: "Install Node.js 22 or newer", text: "From nodejs.org, if you don't have it. Check with:", code: "node --version" },
+      { title: "Install Node.js 24", text: "From nodejs.org (the LTS version). OmniRoute needs Node 24, or 22.22.2 or newer. Check with:", code: "node --version" },
       { title: "Install OmniRoute", code: "npm install -g omniroute" },
       { title: "Start it", text: `The dashboard opens at ${OMNI_LOCAL}/dashboard.`, code: "omniroute" },
     ],
@@ -74,7 +74,7 @@ export function cloudEnv(random: (n: number) => Uint8Array) {
   const password = [...random(12)].map((b) => "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"[b % 55]).join("")
   return {
     password,
-    env: [`DATA_DIR=/data`, `PORT=${OMNI_PORT}`, `JWT_SECRET=${hex(32)}`, `API_KEY_SECRET=${hex(32)}`, `INITIAL_PASSWORD=${password}`].join("\n"),
+    env: [`DATA_DIR=/data`, `PORT=${OMNI_PORT}`, `REQUIRE_API_KEY=true`, `JWT_SECRET=${hex(32)}`, `API_KEY_SECRET=${hex(32)}`, `INITIAL_PASSWORD=${password}`].join("\n"),
   }
 }
 
@@ -100,17 +100,18 @@ export function cloudSteps(env: string): SetupStep[] {
 export function connectSteps(origin: string): SetupStep[] {
   return [
     {
-      title: "Connect AI providers",
-      text: "In the dashboard, open Providers and connect a few. Free ones are listed below. OmniRoute switches between them automatically when one is busy or out of quota.",
+      title: "Connect AI providers (needed: a new OmniRoute can't answer yet)",
+      text: "In the dashboard, open Providers and connect at least one. The quickest is OpenRouter with a free OpenRouter key; Gemini and Groq keys are free too (see Providers & routing). OmniRoute switches between them automatically when one is busy or out of quota.",
     },
     {
       title: "Create an API key",
-      text: `Dashboard → API Keys (${OMNI_LOCAL}/dashboard/api-manager) → new key. Copy it straight away: it's only shown once. To see usage here too, turn on "allow usage" for the key.`,
+      text: `Dashboard → API Keys (${OMNI_LOCAL}/dashboard/api-manager) → new key. Copy it straight away: it's only shown once. To see usage here too, turn on "allow usage" for the key. Check it works (the key is needed, or OmniRoute answers 401):`,
+      code: `curl ${OMNI_LOCAL}/v1/models -H "Authorization: Bearer YOUR_KEY"`,
     },
     {
       title: "Make it reachable from this app",
-      text: "On a cloud host: use its https address, nothing more to do. On your own computer, from anywhere (phone, other networks): Dashboard → Endpoints → turn on Cloudflare Quick Tunnel and copy its https://….trycloudflare.com address. It changes each time OmniRoute restarts. Only on the computer running OmniRoute: use the local address, and start OmniRoute so it allows this site:",
-      code: `CORS_ALLOWED_ORIGINS=${origin} omniroute`,
+      text: "On a cloud host: use its https address, nothing more to do. On your own computer, from anywhere (phone, other networks): Dashboard → Endpoints → turn on Cloudflare Quick Tunnel and copy its https://….trycloudflare.com address. It changes each time OmniRoute restarts. Start OmniRoute so it only answers requests with your key first, since anyone who finds a tunnel address could otherwise use it. Only on the computer running OmniRoute: use the local address, and start OmniRoute so it allows this site. (On Windows, set these with $env:NAME=\"value\" in PowerShell first.)",
+      code: `# With a tunnel (phone, anywhere):\nREQUIRE_API_KEY=true omniroute\n\n# Only on this computer:\nCORS_ALLOWED_ORIGINS=${origin} omniroute`,
     },
     { title: "Connect it below", text: "Paste the address and key, then Test connection. Chat, Code, Design, Cowork, Photo, Audio and the Omni tools then use it." },
   ]

@@ -217,7 +217,8 @@ export async function readStream(body: ReadableStream<Uint8Array>, job: JobRecor
         continue
       }
       if (chunk.error) throw new Error(chunk.error.message ?? "The model stopped with an error.")
-      if (!job.servedBy && chunk.model) job.servedBy = chunk.model
+      // OmniRoute's "keepalive" chunks aren't from a model.
+      if (!job.servedBy && chunk.model && chunk.model !== "keepalive") job.servedBy = chunk.model
       const choice = chunk.choices?.[0]
       const delta = choice?.delta
       if (delta?.reasoning) job.thinking += delta.reasoning
