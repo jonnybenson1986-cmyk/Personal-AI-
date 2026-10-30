@@ -21,6 +21,12 @@ A personal AI chat, coding, design and media app that runs on **free open models
 - **Cowork:** bring files and work on them with the AI. Add documents, spreadsheets (CSV), PDFs, Word files, images or code, or drop them in; on Chrome and Edge on a computer you can **open a whole folder** and save changes back to it. The AI reads them (text inside PDFs and Word files too; tick images to let it see them), answers questions and writes new or improved files that you **Save** with one tap. Edit files yourself, revert to the original, download one file or everything as a zip. Quick asks: summarize, compare, pull out action items, make a table, proofread, write a report.
 - **Photo** editor: brightness, contrast, saturation, warmth, hue, vignette and blur sliders; filters (Vivid, Warm, Mono, Noir, Sepia…); crop with aspect ratios, rotate and flip; draw and add text; undo/redo; export JPEG or PNG at full size or smaller. AI: **AI adjust** (describe the look you want), **Describe** the photo, and with OmniRoute, **AI edit** and **generate** images.
 - **Audio** editor: open a file or record from the microphone, select on the waveform, then keep or delete the selection, fade in/out, change volume, normalize, mute, reverse, speed up or slow down, insert silence, make mono, and append recordings; undo/redo; export WAV. With OmniRoute: **transcribe** speech to text and turn text into **speech** with a choice of voices.
+- **Agents:** the 283 specialist agents of [The Agency](https://github.com/msitarzewski/agency-agents) (MIT), in 18 divisions from Engineering and Design to Marketing, Sales, Security and Finance.
+  - Search them, read any agent's full brief, and give a task to one agent or a team of up to 6 who work in order, each building on the reports before (ready-made teams: Landing page sprint, Code review, Idea to plan, Social campaign).
+  - Tasks run on the site's server, so they keep going when the app is closed. Each agent reports back with a summary, the finished work and next steps; a badge on **Agents** shows new reports, and the app can send a notification.
+  - What the agents can use: your Cowork files (tick **Include Cowork files**), web pages linked in the task (read by the site, no key needed), and web search through OmniRoute when it has a search provider. Files they write can be saved to Cowork in one tap.
+  - **Chat with** any agent: a new chat guided by its brief.
+  - No extra keys: agents use the same AI as the rest of the app (the site's OpenRouter key, your own, or OmniRoute).
 - **Omni** (OmniRoute hub): everything needed to run [OmniRoute](https://www.omniroute.online) and use it from Jonny's AI.
   - **Set up:** step-by-step install for a computer, an Android phone (Termux), Docker or from source, with copyable commands; connecting providers, creating an API key and making it reachable from your phone (Cloudflare Quick Tunnel or `CORS_ALLOWED_ORIGINS`); connect and test; switch all AI to OmniRoute in one tap; check your key's usage.
   - **Tools:** web search, read any web page as clean text, make videos, make music, and read the text in PDFs and photos (OCR). Results can be downloaded, copied or saved to Cowork. Slow ones (video, music) keep going on the server if you close the app.
@@ -132,6 +138,8 @@ Browser (SolidJS PWA)
 | `netlify/shared/gateway.ts` | Proxy to your OmniRoute gateway (public https only, unit tested) |
 | `netlify/shared/jobs.ts`, `netlify/functions/run-job.mts` | Replies that run on the server and keep going when the app is closed (unit tested) |
 | `src/lib/omni.ts`, `src/lib/omniapi.ts`, `src/components/omni/` | Omni screen: OmniRoute setup guide, routing modes and tools (helpers unit tested) |
+| `public/agents/`, `scripts/import-agents.ts` | The Agency's agents (roster and briefs, MIT; see `public/agents/LICENSE.md`) and the script that imports them |
+| `src/lib/agents.ts`, `src/lib/agency.ts`, `netlify/shared/team.ts`, `src/components/agents/` | Agents screen: roster search, tasks, teams and reports; team prompts (unit tested) |
 | `src/lib/jobs.ts` | Starts server replies and follows their progress |
 | `src/lib/route.ts` | Decides whether OmniRoute is reached through the proxy or directly |
 | `src/lib/design.ts`, `src/components/design/` | Design studio: design types, prompts, reading designs out of replies (unit tested) |
@@ -159,6 +167,15 @@ In Netlify, choose **Add new site → Import an existing project** and pick this
 4. For OmniRoute: an iPhone can't run it, so open **Omni → Set up → iPhone / cloud**. It walks through running OmniRoute on a cloud host from Safari, with its secrets and dashboard password generated on the phone, or connecting to one running on your computer through its Cloudflare tunnel.
 
 On iPhone, Download buttons in the home-screen app open the share sheet (Save to Files, Save Image…), and text boxes no longer zoom the page when tapped.
+
+## Updating the agents
+
+The agents are files in `public/agents/`, made from The Agency's repository by a script that reads them as data:
+
+```bash
+git clone --depth 1 https://github.com/msitarzewski/agency-agents /tmp/agency-agents
+node --experimental-strip-types scripts/import-agents.ts /tmp/agency-agents
+```
 
 ## Run locally
 

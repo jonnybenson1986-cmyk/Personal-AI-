@@ -1,12 +1,13 @@
 import { createSignal } from "solid-js"
 
-export type View = "chat" | "code" | "design" | "cowork" | "image" | "audio" | "omni"
+export type View = "chat" | "code" | "design" | "cowork" | "agents" | "image" | "audio" | "omni"
 
 export const VIEWS: { id: View; label: string }[] = [
   { id: "chat", label: "Chat" },
   { id: "code", label: "Code" },
   { id: "design", label: "Design" },
   { id: "cowork", label: "Cowork" },
+  { id: "agents", label: "Agents" },
   { id: "image", label: "Photo" },
   { id: "audio", label: "Audio" },
   { id: "omni", label: "Omni" },

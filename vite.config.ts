@@ -32,6 +32,12 @@ export default defineConfig({
         navigateFallback: "/index.html",
         navigateFallbackDenylist: [/^\/api\//],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        // The agents (public/agents) aren't precached: the roster is kept fresh, and each
+        // agent's brief is cached once it's been used, so they work offline after that.
+        runtimeCaching: [
+          { urlPattern: /\/agents\/index\.json$/, handler: "StaleWhileRevalidate", options: { cacheName: "agents-index" } },
+          { urlPattern: /\/agents\/[\w-]+\.md$/, handler: "CacheFirst", options: { cacheName: "agents", expiration: { maxEntries: 400 } } },
+        ],
       },
     }),
   ],

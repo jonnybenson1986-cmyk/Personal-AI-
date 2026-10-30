@@ -96,6 +96,14 @@ function backgroundRoute(c: Credentials) {
   return route?.mode === "proxy" ? { provider: "omniroute" as const, omnirouteUrl: route.base || undefined } : undefined
 }
 
+/** Where and with which keys work can run on the server, if it can (see jobs.ts). */
+export function serverTarget(c: Credentials) {
+  const where = backgroundRoute(c)
+  if (!where) return undefined
+  const secrets = c.provider === "omniroute" ? { omnirouteKey: c.omnirouteKey?.trim() } : { openrouterKey: c.openrouterKey.trim() || undefined }
+  return { where, secrets }
+}
+
 function noteGateway(c: Credentials) {
   lastGateway = c.provider === "omniroute" ? gatewayFor(c.omnirouteUrl ?? "") : undefined
 }
@@ -138,16 +146,10 @@ export async function streamChat(req: ChatRequest): Promise<StreamResult> {
 }
 
 async function streamOnce(req: ChatRequest): Promise<StreamResult> {
-  const where = req.job && backgroundRoute(req.credentials)
-  if (where) {
+  const target = req.job && serverTarget(req.credentials)
+  if (target) {
     noteGateway(req.credentials)
-    const id = await startJob(
-      {
-        input: { ...where, model: req.model.id, messages: req.messages, reasoning: req.reasoning },
-        secrets: req.credentials.provider === "omniroute" ? { omnirouteKey: req.credentials.omnirouteKey?.trim() } : { openrouterKey: req.credentials.openrouterKey.trim() || undefined },
-      },
-      req.signal,
-    )
+    const id = await startJob({ input: { ...target.where, model: req.model.id, messages: req.messages, reasoning: req.reasoning }, secrets: target.secrets }, req.signal)
     if (id) {
       req.job!.started(id)
       return followJob(id, req.events, req.signal)

@@ -8,8 +8,9 @@ import { ModelPicker } from "./components/ModelPicker"
 import { Sidebar } from "./components/Sidebar"
 import { Thread } from "./components/Thread"
 import { canChat, refreshStatus } from "./lib/catalog"
-import { activeConversation, loadConversations, loaded, newChat, settings } from "./lib/store"
+import { activeConversation, chatPersona, loadConversations, loaded, newChat, setChatPersona, settings } from "./lib/store"
 import { view } from "./lib/view"
+import { restoreAgency } from "./lib/agency"
 
 // The workspaces load only when opened, so chat stays fast.
 const CodeView = lazy(() => import("./components/code/CodeView"))
@@ -18,6 +19,7 @@ const CoworkView = lazy(() => import("./components/cowork/CoworkView"))
 const ImageEditor = lazy(() => import("./components/media/ImageEditor"))
 const AudioEditor = lazy(() => import("./components/media/AudioEditor"))
 const OmniView = lazy(() => import("./components/omni/OmniView"))
+const AgentsView = lazy(() => import("./components/agents/AgentsView"))
 
 const SUGGESTIONS = [
   "Explain a tricky concept simply",
@@ -48,6 +50,8 @@ export function App() {
     // Code and Cowork replies that finished on the server while the app was closed come back now,
     // not only when those screens are opened.
     void import("./lib/coworkspace").then((m) => m.restoreCowork()).catch(() => {})
+    // Agents' tasks that finished (or are still running) on the server report back.
+    void restoreAgency()
     void Promise.all([import("./lib/workspace"), import("./lib/codeai")])
       .then(([w, ai]) => w.restoreWorkspace().then(ai.resumeCodeAI))
       .catch(() => {})
@@ -86,6 +90,9 @@ export function App() {
                   </Match>
                   <Match when={view() === "audio"}>
                     <AudioEditor onMenu={() => setSidebar(true)} />
+                  </Match>
+                  <Match when={view() === "agents"}>
+                    <AgentsView onMenu={() => setSidebar(true)} />
                   </Match>
                   <Match when={view() === "omni"}>
                     <OmniView onMenu={() => setSidebar(true)} />
@@ -136,7 +143,15 @@ export function App() {
                   }
                 >
                 <div class="welcome">
-                  <h1>What's on your mind?</h1>
+                  <h1>{chatPersona() ? `Chat with ${chatPersona()!.name}` : "What's on your mind?"}</h1>
+                  <Show when={chatPersona()}>
+                    <p class="muted small-text">
+                      The agent's brief from The Agency guides this chat.{" "}
+                      <button class="link-button" onClick={() => setChatPersona(undefined)}>
+                        Chat normally
+                      </button>
+                    </p>
+                  </Show>
                   <Composer autofocus draft={draft} onDraftUsed={() => setDraft(undefined)} />
                   <div class="suggestions">
                     <For each={SUGGESTIONS}>

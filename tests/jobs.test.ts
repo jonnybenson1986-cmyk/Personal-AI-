@@ -251,3 +251,53 @@ test("chat jobs keep OmniRoute's routing decision", async () => {
   assert.equal(job.text, "Hi")
   assert.equal(job.route, "strategy=auto; provider=groq; latency_ms=300")
 })
+
+test("a team job runs each agent in order, passing on the reports, and keeps them all", async () => {
+  const { store, data } = memoryStore()
+  const team = { task: "Plan a launch", members: [{ name: "Researcher", brief: "You research." }, { name: "Writer", brief: "You write." }] }
+  const { res, json } = await api(store, "POST", "/api/jobs", { input: { provider: "openrouter", model: "openrouter/free", messages: [], team }, secrets: { openrouterKey: "sk-or-mine" } })
+  assert.equal(res.status, 201)
+  const bodies: any[] = []
+  globalThis.fetch = (async (_: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body))
+    bodies.push(body)
+    return new Response(sse(chunk(bodies.length === 1 ? "## Summary\nFound 3 trends" : "## Summary\nWrote the plan")), { headers: { "content-type": "text/event-stream" } })
+  }) as typeof fetch
+  await runJob(json.id, { openrouterKey: "sk-or-mine" }, { store, env: env({}) })
+  const job = data.get(`job/${json.id}`) as JobRecord
+  assert.equal(job.status, "done")
+  assert.deepEqual(job.steps!.map((s) => [s.name, s.status, s.text]), [
+    ["Researcher", "done", "## Summary\nFound 3 trends"],
+    ["Writer", "done", "## Summary\nWrote the plan"],
+  ])
+  assert.equal(bodies.length, 2)
+  assert.ok(bodies[0].messages[0].content.startsWith("You research."))
+  assert.equal(bodies[0].messages[1].content, "Plan a launch")
+  assert.ok(bodies[1].messages[0].content.startsWith("You write."))
+  assert.match(bodies[1].messages[1].content, /<report from="Researcher">\n## Summary\nFound 3 trends\n<\/report>/)
+  assert.equal(bodies[1].stream, true)
+})
+
+test("when a team member fails, earlier reports are kept and later ones never start", async () => {
+  const { store, data } = memoryStore()
+  const team = { task: "Review", members: [{ name: "A", brief: "a" }, { name: "B", brief: "b" }, { name: "C", brief: "c" }] }
+  const { json } = await api(store, "POST", "/api/jobs", { input: { provider: "openrouter", model: "openrouter/free", messages: [], team }, secrets: { openrouterKey: "sk-or-mine" } })
+  let calls = 0
+  globalThis.fetch = (async () =>
+    ++calls === 1 ? new Response(sse(chunk("A's report"))) : new Response('{"error":{"message":"Rate limit exceeded"}}', { status: 429 })) as unknown as typeof fetch
+  await runJob(json.id, { openrouterKey: "sk-or-mine" }, { store, env: env({}) })
+  const job = data.get(`job/${json.id}`) as JobRecord
+  assert.equal(job.status, "error")
+  assert.equal(job.error, "B: Rate limit exceeded")
+  assert.equal(job.code, 429)
+  assert.deepEqual(job.steps!.map((s) => s.status), ["done", "error", "waiting"])
+  assert.equal(job.steps![0].text, "A's report")
+  assert.equal(calls, 2)
+})
+
+test("bad teams are refused before a job starts", async () => {
+  const { store } = memoryStore()
+  const bad = await api(store, "POST", "/api/jobs", { input: { provider: "openrouter", model: "openrouter/free", messages: [], team: { task: "x", members: [] } }, secrets: { openrouterKey: "sk-or-x" } })
+  assert.equal(bad.res.status, 400)
+  assert.match(bad.json.error.message, /1 to 6 agents/)
+})

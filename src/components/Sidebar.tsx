@@ -3,13 +3,15 @@ import { canInstall, install, standalone } from "../lib/install"
 import { setView, type View, VIEWS, view } from "../lib/view"
 import { activeId, conversations, deleteConversation, isStreaming, newChat, renameConversation, setActiveId } from "../lib/store"
 import type { Conversation } from "../lib/types"
-import { IconCompose, IconDownload, IconEdit, IconSettings, IconTrash, IconChat, IconCode, IconImage, IconPalette, IconPeople, IconWave, IconHub } from "./icons"
+import { unseenReports } from "../lib/agency"
+import { IconCompose, IconDownload, IconEdit, IconSettings, IconTrash, IconChat, IconCode, IconImage, IconPalette, IconPeople, IconWave, IconHub, IconBot } from "./icons"
 
 const NAV_ICON: Record<View, () => JSX.Element> = {
   chat: IconChat,
   code: IconCode,
   design: IconPalette,
   cowork: IconPeople,
+  agents: IconBot,
   image: IconImage,
   audio: IconWave,
   omni: IconHub,
@@ -85,6 +87,11 @@ export function Sidebar(props: { open: boolean; onClose: () => void; onSettings:
               >
                 {NAV_ICON[v.id]()}
                 {v.label}
+                <Show when={v.id === "agents" && unseenReports()}>
+                  <span class="nav-badge" aria-label={`${unseenReports()} new reports`}>
+                    {unseenReports()}
+                  </span>
+                </Show>
               </button>
             )}
           </For>

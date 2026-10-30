@@ -104,8 +104,18 @@ function mutate(id: string, fn: (c: Conversation) => void) {
 
 export const activeConversation = () => conversations.find((c) => c.id === activeId())
 
+/** An agent the next new chat talks to: its brief becomes the chat's system prompt. */
+export const [chatPersona, setChatPersona] = createSignal<{ name: string; system: string }>()
+
 export function newChat() {
   setActiveId(undefined)
+  setChatPersona(undefined)
+}
+
+/** Opens a new chat with an agent from the Agents screen. */
+export function chatWith(name: string, system: string) {
+  setActiveId(undefined)
+  setChatPersona({ name, system })
 }
 
 export async function deleteConversation(id: string) {
@@ -145,10 +155,12 @@ export function send(text: string, attachments: Attachment[], tool?: string, rep
   let id = activeId()
   if (!id) {
     const now = Date.now()
+    const persona = chatPersona()
+    setChatPersona(undefined)
     const conv: Conversation = {
       id: uid(),
-      title: titleFrom(text, attachments),
-      system: settings.system.trim(),
+      title: persona ? `${persona.name}: ${titleFrom(text, attachments)}` : titleFrom(text, attachments),
+      system: persona ? [persona.system, settings.system.trim()].filter(Boolean).join("\n\n") : settings.system.trim(),
       models: settings.models.map((m) => ({ ...m })),
       turns: [],
       createdAt: now,

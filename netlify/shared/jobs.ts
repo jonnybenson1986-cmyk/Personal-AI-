@@ -9,6 +9,7 @@
 // after a day).
 import { gatewayBase, siteGateway } from "./gateway.ts"
 import { isFreeModel, json, PLACEHOLDER_KEY } from "./proxy.ts"
+import { readTeam, type TeamMember, teamMessages } from "./team.ts"
 
 export interface JobStore {
   get(key: string): Promise<unknown>
@@ -26,6 +27,19 @@ export interface JobInput {
   omnirouteUrl?: string
   /** An OmniRoute request other than chat (video, music, OCR…), whose JSON answer is kept whole. */
   request?: { path: string; body: unknown }
+  /** Agents working on a task in order, each reporting back (see team.ts). */
+  team?: { task: string; members: TeamMember[] }
+}
+
+/** One agent's part of a team job. */
+export interface StepRecord {
+  name: string
+  status: "waiting" | "running" | "done" | "error"
+  text: string
+  thinking: string
+  servedBy?: string
+  notice?: string
+  error?: string
 }
 
 /** The slow OmniRoute endpoints that may run as jobs. */
@@ -49,6 +63,8 @@ export interface JobRecord {
   route?: string
   /** The JSON answer of a non-chat request. */
   result?: unknown
+  /** Each agent's report, for a team job. */
+  steps?: StepRecord[]
   updated: number
 }
 
@@ -98,6 +114,11 @@ function readInput(raw: unknown): JobInput | string {
     return { provider: "omniroute", model: typeof i.model === "string" ? i.model.slice(0, 200) : "", messages: [], omnirouteUrl, request: { path: r.path, body: r.body } }
   }
   if (typeof i.model !== "string" || !i.model || i.model.length > 200) return "Missing model."
+  if (i.team !== undefined) {
+    const team = readTeam(i.team)
+    if (typeof team === "string") return team
+    return { provider: i.provider, model: i.model, messages: [], reasoning: !!i.reasoning, omnirouteUrl, team }
+  }
   if (!Array.isArray(i.messages) || !i.messages.length) return "Missing messages."
   return { provider: i.provider, model: i.model, messages: i.messages, reasoning: !!i.reasoning, omnirouteUrl }
 }
@@ -244,8 +265,8 @@ export async function runJob(id: string, secrets: JobSecrets, deps: { store: Job
   const watch = input.request
     ? setInterval(() => void store.get(`cancel/${id}`).then((c) => c && controller.abort(new Error("cancelled")), () => {}), 2000)
     : undefined
-  try {
-    const res = await fetch(up.url, {
+  const post = (body: unknown) =>
+    fetch(up.url, {
       method: "POST",
       signal: controller.signal,
       headers: {
@@ -255,27 +276,62 @@ export async function runJob(id: string, secrets: JobSecrets, deps: { store: Job
         ...(deps.siteUrl ? { "http-referer": deps.siteUrl } : {}),
         "x-openrouter-title": "Jonny's AI project",
       },
-      body: JSON.stringify(input.request ? input.request.body : { model: input.model, messages: input.messages, stream: true, ...up.extra }),
+      body: JSON.stringify(body),
     })
-    job.route = res.headers.get("x-omniroute-decision") ?? undefined
-    if (!res.ok || !res.body) {
-      const text = await res.text().catch(() => "")
-      let message = text.slice(0, 500) || `Request failed (${res.status})`
-      try {
-        const body = JSON.parse(text)
-        message = body?.error?.message ?? body?.message ?? message
-      } catch {
-        // Not JSON: keep the text.
+  const failure = async (res: Response) => {
+    const text = await res.text().catch(() => "")
+    let message = text.slice(0, 500) || `Request failed (${res.status})`
+    try {
+      const body = JSON.parse(text)
+      message = body?.error?.message ?? body?.message ?? message
+    } catch {
+      // Not JSON: keep the text.
+    }
+    return { message, code: res.status }
+  }
+  try {
+    if (input.team) {
+      // Each agent in turn, with the reports before it; the job is done when the last one is.
+      const { task, members } = input.team
+      const steps: StepRecord[] = members.map((m) => ({ name: m.name, status: "waiting", text: "", thinking: "" }))
+      job.steps = steps
+      const reports: string[] = []
+      for (let i = 0; i < members.length && job.status === "running"; i++) {
+        const step = steps[i]
+        step.status = "running"
+        await save().catch(() => {})
+        const res = await post({ model: input.model, messages: teamMessages(task, members, i, reports), stream: true, ...up.extra })
+        job.route = res.headers.get("x-omniroute-decision") ?? job.route
+        if (!res.ok || !res.body) {
+          const f = await failure(res)
+          Object.assign(step, { status: "error", error: f.message })
+          Object.assign(job, { status: "error", error: `${step.name}: ${f.message}`, code: f.code })
+          break
+        }
+        await readStream(res.body, step as unknown as JobRecord, progress)
+        // The thinking was only worth showing while it ran.
+        Object.assign(step, { status: "done", thinking: "" })
+        reports.push(step.text)
       }
-      Object.assign(job, { status: "error", error: message, code: res.status })
-    } else if (input.request) {
-      job.result = await res.json()
-      job.status = "done"
+      if (job.status === "running") job.status = "done"
     } else {
-      await readStream(res.body, job, progress)
-      job.status = "done"
+      const res = await post(input.request ? input.request.body : { model: input.model, messages: input.messages, stream: true, ...up.extra })
+      job.route = res.headers.get("x-omniroute-decision") ?? undefined
+      if (!res.ok || !res.body) {
+        const f = await failure(res)
+        Object.assign(job, { status: "error", error: f.message, code: f.code })
+      } else if (input.request) {
+        job.result = await res.json()
+        job.status = "done"
+      } else {
+        await readStream(res.body, job, progress)
+        job.status = "done"
+      }
     }
   } catch (e) {
+    // A team step that was running when it failed is marked as failed too.
+    const running = job.steps?.find((st) => st.status === "running")
+    if (running) Object.assign(running, { status: "error", error: e instanceof Error ? e.message : String(e) })
     const reason = controller.signal.reason instanceof Error ? controller.signal.reason.message : ""
     if (reason === "cancelled") job.status = "stopped"
     else {

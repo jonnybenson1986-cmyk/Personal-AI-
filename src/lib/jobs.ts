@@ -1,6 +1,7 @@
 // Replies generated on the server (see netlify/shared/jobs.ts), so they finish even when the
 // app is closed. Starting one returns an id the caller saves; following it reads the progress
 // and turns it into the same text/thinking events a live stream gives.
+import type { TeamMember } from "../../netlify/shared/team.ts"
 import type { StreamEvents, StreamResult } from "./types"
 
 /** A failed job, with the upstream HTTP status when there was one. */
@@ -14,7 +15,15 @@ export class JobError extends Error {
 }
 
 export interface JobStart {
-  input: { provider: "openrouter" | "omniroute"; model: string; messages: unknown[]; reasoning?: boolean; omnirouteUrl?: string; request?: { path: string; body: unknown } }
+  input: {
+    provider: "openrouter" | "omniroute"
+    model: string
+    messages: unknown[]
+    reasoning?: boolean
+    omnirouteUrl?: string
+    request?: { path: string; body: unknown }
+    team?: { task: string; members: TeamMember[] }
+  }
   secrets: { openrouterKey?: string; omnirouteKey?: string }
 }
 
@@ -34,6 +43,17 @@ export async function startJob(req: JobStart, signal?: AbortSignal): Promise<str
   return body.id
 }
 
+/** One agent's part of a team job, as the server reports it. */
+export interface StepProgress {
+  name: string
+  status: "waiting" | "running" | "done" | "error"
+  text: string
+  thinking: string
+  servedBy?: string
+  notice?: string
+  error?: string
+}
+
 interface Progress {
   status: "queued" | "running" | "done" | "error" | "stopped"
   text: string
@@ -46,6 +66,7 @@ interface Progress {
   code?: number
   route?: string
   result?: unknown
+  steps?: StepProgress[]
 }
 
 /**
@@ -94,7 +115,7 @@ const QUEUE_LIMIT_MS = 2 * 60 * 1000
  * Follows a job until it ends, passing new text on as events. Stopping (the signal) cancels
  * the job on the server. Network failures are retried, since the job carries on regardless.
  */
-export async function followJob(id: string, events: StreamEvents, signal: AbortSignal): Promise<StreamResult> {
+export async function followJob(id: string, events: StreamEvents, signal: AbortSignal, onSteps?: (steps: StepProgress[]) => void): Promise<StreamResult> {
   let text = 0
   let thinking = 0
   let served = false
@@ -123,6 +144,8 @@ export async function followJob(id: string, events: StreamEvents, signal: AbortS
         continue
       }
       const p = (await res.json()) as Progress
+      // A team's reports come whole each time (they're kept even if a later step fails).
+      if (p.steps) onSteps?.(p.steps)
       if (!served && p.servedBy) {
         served = true
         events.servedBy(p.servedBy)
