@@ -2,8 +2,9 @@
 // through the edge proxy, or the user's own OmniRoute gateway. Normalizes the stream into
 // StreamEvents.
 import OpenAI from "openai"
-import { type ChatMessage, chatMessages } from "./history"
+import { type ChatMessage, fitMessages, inputBudget } from "./history"
 import { filterFreeModels, filterGatewayModels, type GatewayModel, type OpenRouterModel } from "./models"
+import { freeFallback } from "../../netlify/shared/proxy.ts"
 import { followJob, JobError, restartEvents, startJob } from "./jobs"
 import { isIOS } from "./install"
 import { AUTO_MODEL } from "./models"
@@ -63,6 +64,8 @@ export interface StreamRequest {
   signal: AbortSignal
   events: StreamEvents
   job?: JobHooks
+  /** Tokens the conversation may use (see inputBudget); older turns beyond it are left out. */
+  budget?: number
 }
 
 // OpenRouter extends chat-completion chunks with reasoning text and in-stream errors.
@@ -77,7 +80,7 @@ interface Chunk {
 
 export async function streamReply(req: StreamRequest): Promise<StreamResult> {
   return streamChat({
-    messages: chatMessages(req.conversation.system, req.history, req.current, req.model),
+    messages: fitMessages(req.conversation.system, req.history, req.current, req.model, req.budget ?? inputBudget(), req.conversation.summary).messages,
     model: req.model,
     credentials: req.credentials,
     signal: req.signal,
@@ -174,6 +177,8 @@ async function streamOnce(req: ChatRequest): Promise<StreamResult> {
         model: req.model.id,
         messages: req.messages as OpenAI.Chat.ChatCompletionMessageParam[],
         stream: true,
+        // A busy free model falls back to OpenRouter's free router instead of failing.
+        ...(req.credentials.provider === "omniroute" ? {} : freeFallback(req.model.id)),
         // OpenRouter's reasoning control, or the standard OpenAI field for a gateway.
         ...(req.reasoning ? (req.credentials.provider === "omniroute" ? { reasoning_effort: "high" } : { reasoning: { effort: "high" } }) : {}),
       } as OpenAI.Chat.ChatCompletionCreateParamsStreaming,

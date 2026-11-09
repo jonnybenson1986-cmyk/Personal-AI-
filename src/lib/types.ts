@@ -7,6 +7,8 @@ export interface ModelInfo extends ModelRef {
   hint?: string
   /** Accepts images in messages. */
   vision?: boolean
+  /** Context window in tokens, when the provider says. */
+  context?: number
 }
 
 export interface Attachment {
@@ -66,6 +68,8 @@ export interface Conversation {
   /** The GitHub repo connected to this chat, if any. */
   repo?: RepoTarget
   turns: Turn[]
+  /** The oldest turns condensed, once the chat no longer fits a model's context window. */
+  summary?: { text: string; through: string }
   createdAt: number
   updatedAt: number
 }

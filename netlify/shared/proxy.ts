@@ -32,6 +32,14 @@ export function isFreeModel(id: unknown) {
   return typeof id === "string" && (id.endsWith(":free") || id === "openrouter/free")
 }
 
+/**
+ * OpenRouter's fallback list for a chosen free model: if it's busy, rate-limited or down,
+ * OpenRouter tries its free router instead of failing (the `models` parameter).
+ */
+export function freeFallback(model: string): { models?: string[] } {
+  return isFreeModel(model) && model !== "openrouter/free" ? { models: [model, "openrouter/free"] } : {}
+}
+
 /** Why a request may not use the site's key, if it may not. */
 export function paidFeature(body: ArrayBuffer) {
   let request: Record<string, unknown>

@@ -284,7 +284,9 @@ test("when a team member fails, earlier reports are kept and later ones never st
   const { json } = await api(store, "POST", "/api/jobs", { input: { provider: "openrouter", model: "openrouter/free", messages: [], team }, secrets: { openrouterKey: "sk-or-mine" } })
   let calls = 0
   globalThis.fetch = (async () =>
-    ++calls === 1 ? new Response(sse(chunk("A's report"))) : new Response('{"error":{"message":"Rate limit exceeded"}}', { status: 429 })) as unknown as typeof fetch
+    ++calls === 1
+      ? new Response(sse(chunk("A's report")))
+      : new Response('{"error":{"message":"Rate limit exceeded"}}', { status: 429, headers: { "retry-after": "0" } })) as unknown as typeof fetch
   await runJob(json.id, { openrouterKey: "sk-or-mine" }, { store, env: env({}) })
   const job = data.get(`job/${json.id}`) as JobRecord
   assert.equal(job.status, "error")
@@ -292,7 +294,8 @@ test("when a team member fails, earlier reports are kept and later ones never st
   assert.equal(job.code, 429)
   assert.deepEqual(job.steps!.map((s) => s.status), ["done", "error", "waiting"])
   assert.equal(job.steps![0].text, "A's report")
-  assert.equal(calls, 2)
+  // B was tried twice (once more after the rate limit), C never.
+  assert.equal(calls, 3)
 })
 
 test("bad teams are refused before a job starts", async () => {
@@ -308,4 +311,49 @@ test("OmniRoute's keepalive chunks don't count as the model that answered", asyn
   globalThis.fetch = (async () => new Response(sse({ model: "keepalive", choices: [{ delta: {} }] }, chunk("Hi")))) as unknown as typeof fetch
   await runJob(json.id, { openrouterKey: "sk-or-mine" }, { store, env: env({}) })
   assert.equal((data.get(`job/${json.id}`) as JobRecord).servedBy, "google/gemma:free")
+})
+
+test("a busy provider is tried once more before the job fails, after its Retry-After", async () => {
+  const { store, data } = memoryStore()
+  const id = await startedJob(store)
+  let calls = 0
+  globalThis.fetch = (async () =>
+    ++calls === 1 ? new Response("busy", { status: 503, headers: { "retry-after": "0" } }) : new Response(sse(chunk("Second time lucky")))) as unknown as typeof fetch
+  await runJob(id, { openrouterKey: "sk-or-mine" }, { store, env: env({}) })
+  const job = data.get(`job/${id}`) as JobRecord
+  assert.deepEqual([job.status, job.text, calls], ["done", "Second time lucky", 2])
+})
+
+test("starting the same job twice (same key) returns the first job", async () => {
+  const { store, data } = memoryStore()
+  const key = crypto.randomUUID()
+  const body = { input, secrets: { openrouterKey: "sk-or-mine" }, idempotencyKey: key }
+  const first = await api(store, "POST", "/api/jobs", body)
+  const again = await api(store, "POST", "/api/jobs", body)
+  assert.equal(again.json.id, first.json.id)
+  assert.equal(again.json.replay, true)
+  assert.equal(again.starts.length, 0)
+  assert.equal([...data.keys()].filter((k) => k.startsWith("job/")).length, 1)
+  // An old start key is cleaned up with its job.
+  await purgeOld(store, Date.now() + 2 * 86_400_000)
+  assert.equal(data.size, 0)
+})
+
+test("a chosen free model falls back to OpenRouter's free router; the router and paid models don't", () => {
+  assert.deepEqual((upstreamFor({ ...input, provider: "openrouter", model: "google/gemma:free" }, { openrouterKey: "sk-or-mine" }, env({})) as { extra: unknown }).extra, {
+    models: ["google/gemma:free", "openrouter/free"],
+  })
+  assert.deepEqual((upstreamFor({ ...input, provider: "openrouter" }, { openrouterKey: "sk-or-mine" }, env({})) as { extra: unknown }).extra, {})
+  assert.deepEqual((upstreamFor({ ...input, provider: "openrouter", model: "openai/gpt-5" }, { openrouterKey: "sk-or-mine" }, env({})) as { extra: unknown }).extra, {})
+})
+
+test("the polling endpoint doesn't start jobs: starts go through the rate-limited /api/job-start", async () => {
+  const { store } = memoryStore()
+  const res = await jobsApi(new Request("https://site.example/api/jobs", { method: "POST", body: JSON.stringify({ input, secrets: { openrouterKey: "sk-or-mine" } }) }), {
+    store,
+    env: env({}),
+    start: async () => new Response(null, { status: 202 }),
+    allowStart: false,
+  })
+  assert.equal(res.status, 405)
 })

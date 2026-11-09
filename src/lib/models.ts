@@ -45,6 +45,7 @@ export function filterFreeModels(list: OpenRouterModel[]): ModelInfo[] {
       const context = m.context_length ? `${Math.round(m.context_length / 1000)}K context` : undefined
       return {
         id: m.id,
+        ...(m.context_length ? { context: m.context_length } : {}),
         label: (m.name ?? m.id).replace(/\s*\(free\)\s*$/i, "").replace(/:\s+/, " ").replace(/\s+/g, " "),
         hint: [vision ? "Sees images" : undefined, context].filter(Boolean).join(" · ") || undefined,
         vision,
@@ -81,6 +82,7 @@ export function filterGatewayModels(list: GatewayModel[]): ModelInfo[] {
       const kind = m.owned_by === "combo" ? "Combo" : undefined
       return {
         id: m.id,
+        ...(m.context_length ? { context: m.context_length } : {}),
         label: m.id === GATEWAY_AUTO ? "Auto (OmniRoute picks)" : (m.display_name ?? m.id),
         hint: m.id === GATEWAY_AUTO ? "Routes each message across your connected providers" : [kind, vision ? "Sees images" : undefined, context].filter(Boolean).join(" · ") || undefined,
         vision,
@@ -102,3 +104,10 @@ export function gatewayMediaModels(list: GatewayModel[]) {
     transcription: ids((m) => (m.type === "audio" && m.subtype !== "speech") || m.type === "stt"),
   }
 }
+
+const windows = new Map<string, number>()
+/** Keeps the context windows from the last model list loaded, to fit long chats to them. */
+export function rememberWindows(models: ModelInfo[]) {
+  for (const m of models) if (m.context) windows.set(m.id, m.context)
+}
+export const contextWindow = (id: string) => windows.get(id)

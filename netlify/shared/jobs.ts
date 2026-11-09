@@ -8,7 +8,7 @@
 // deleted as soon as the job starts, and finished jobs are deleted once the app has them (or
 // after a day).
 import { gatewayBase, siteGateway } from "./gateway.ts"
-import { isFreeModel, json, PLACEHOLDER_KEY } from "./proxy.ts"
+import { freeFallback, isFreeModel, json, PLACEHOLDER_KEY } from "./proxy.ts"
 import { readTeam, type TeamMember, teamMessages } from "./team.ts"
 
 export interface JobStore {
@@ -69,6 +69,10 @@ export interface JobRecord {
 }
 
 const MAX_INPUT = 8 * 1024 * 1024
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/** Upstream answers worth one more try before any text: busy, rate-limited, or briefly down. */
+const RETRYABLE = new Set([429, 500, 502, 503, 504])
+const MAX_RETRY_WAIT_S = 8
 const KEEP_MS = 24 * 60 * 60 * 1000
 /** Stops a little before the 15-minute limit, so the job can still record what happened. */
 const RUN_LIMIT_MS = 14 * 60 * 1000
@@ -101,7 +105,7 @@ export function upstreamFor(input: JobInput, secrets: JobSecrets, env: (name: st
     if (!key) return { error: "Add your free OpenRouter key in Settings to start chatting.", code: 401 }
     if (!isFreeModel(input.model)) return { error: "The site's key only works with free models.", code: 403 }
   }
-  return { url: `${openrouterOrigin}/v1/chat/completions`, key, extra: input.reasoning ? { reasoning: { effort: "high" } } : {} }
+  return { url: `${openrouterOrigin}/v1/chat/completions`, key, extra: { ...freeFallback(input.model), ...(input.reasoning ? { reasoning: { effort: "high" } } : {}) } }
 }
 
 function readInput(raw: unknown): JobInput | string {
@@ -129,16 +133,20 @@ function readInput(raw: unknown): JobInput | string {
  * GET /api/jobs/:id?text=N&thinking=M returns its progress (text after the first N characters);
  * POST /api/jobs/:id/cancel stops it; DELETE /api/jobs/:id removes it.
  */
-export async function jobsApi(req: Request, deps: { store: JobStore; env: (name: string) => string | undefined; start: (body: string) => Promise<Response> }) {
+export async function jobsApi(
+  req: Request,
+  deps: { store: JobStore; env: (name: string) => string | undefined; start: (body: string) => Promise<Response>; allowStart?: boolean },
+) {
   const url = new URL(req.url)
   const [, , , id, action] = url.pathname.split("/")
   const { store } = deps
 
   if (!id) {
-    if (req.method !== "POST") return json(405, { error: { message: "Method not allowed" } })
+    // Starts come through /api/job-start, which the site rate-limits per visitor.
+    if (req.method !== "POST" || deps.allowStart === false) return json(405, { error: { message: "Method not allowed" } })
     const body = await req.text()
     if (body.length > MAX_INPUT) return json(413, { error: { message: "That's too much to send in one message." } })
-    let parsed: { input?: unknown; secrets?: JobSecrets }
+    let parsed: { input?: unknown; secrets?: JobSecrets; idempotencyKey?: unknown }
     try {
       parsed = JSON.parse(body)
     } catch {
@@ -150,7 +158,13 @@ export async function jobsApi(req: Request, deps: { store: JobStore; env: (name:
     // Problems that are known now are reported now, not as a failed job.
     const up = upstreamFor(input, secrets, deps.env)
     if ("error" in up) return json(up.code ?? 400, { error: { message: up.error } })
+    // A start repeated with the same key (the app retrying after a dropped connection) gets the
+    // job that's already running instead of a second one.
+    const idem = typeof parsed.idempotencyKey === "string" && UUID.test(parsed.idempotencyKey) ? `idem/${parsed.idempotencyKey}` : undefined
+    const earlier = idem && ((await store.get(idem)) as string | null)
+    if (earlier && validJobId(earlier) && (await store.get(`job/${earlier}`))) return json(201, { id: earlier, replay: true })
     const jobId = newJobId()
+    if (idem) await store.set(idem, jobId)
     await store.set(`input/${jobId}`, input)
     await store.set(`job/${jobId}`, { status: "queued", text: "", thinking: "", updated: Date.now() } satisfies JobRecord)
     let started: Response | undefined
@@ -160,7 +174,7 @@ export async function jobsApi(req: Request, deps: { store: JobStore; env: (name:
       // Handled below.
     }
     if (!started || started.status >= 300) {
-      await Promise.all([store.delete(`input/${jobId}`), store.delete(`job/${jobId}`)])
+      await Promise.all([store.delete(`input/${jobId}`), store.delete(`job/${jobId}`), ...(idem ? [store.delete(idem)] : [])])
       return json(503, { error: { message: "Background replies aren't available on this server." } })
     }
     return json(201, { id: jobId })
@@ -189,6 +203,11 @@ export async function purgeOld(store: JobStore, now = Date.now()) {
   for (const prefix of ["job/", "input/", "cancel/"]) {
     const keys = await store.list(prefix)
     await Promise.all(keys.filter((k) => now - jobTime(k.slice(prefix.length)) > KEEP_MS).map((k) => store.delete(k)))
+  }
+  // Start keys hold the job id they started, which carries its time.
+  for (const k of await store.list("idem/")) {
+    const id = (await store.get(k)) as string | null
+    if (!id || !validJobId(id) || now - jobTime(id) > KEEP_MS) await store.delete(k)
   }
 }
 
@@ -241,6 +260,7 @@ export async function runJob(id: string, secrets: JobSecrets, deps: { store: Job
   await store.delete(`input/${id}`)
   await purgeOld(store).catch(() => {})
 
+  const startedAt = Date.now()
   const job: JobRecord = { status: "running", text: "", thinking: "", updated: Date.now() }
   const save = () => store.set(`job/${id}`, { ...job, updated: Date.now() })
   const up = upstreamFor(input, secrets, deps.env, deps.openrouterOrigin)
@@ -279,6 +299,19 @@ export async function runJob(id: string, secrets: JobSecrets, deps: { store: Job
       },
       body: JSON.stringify(body),
     })
+  let retried = 0
+  // Chat calls get one more try on a busy or briefly failing provider (never media requests,
+  // which can cost money each time).
+  const send = async (body: unknown) => {
+    const res = await post(body)
+    if (input.request || !RETRYABLE.has(res.status)) return res
+    const header = res.headers.get("retry-after")
+    const wait = header !== null && header.trim() !== "" && Number.isFinite(Number(header)) ? Math.min(MAX_RETRY_WAIT_S, Number(header)) : 2
+    await res.body?.cancel().catch(() => {})
+    await new Promise((resolve) => setTimeout(resolve, wait * 1000))
+    retried++
+    return post(body)
+  }
   const failure = async (res: Response) => {
     const text = await res.text().catch(() => "")
     let message = text.slice(0, 500) || `Request failed (${res.status})`
@@ -301,7 +334,7 @@ export async function runJob(id: string, secrets: JobSecrets, deps: { store: Job
         const step = steps[i]
         step.status = "running"
         await save().catch(() => {})
-        const res = await post({ model: input.model, messages: teamMessages(task, members, i, reports), stream: true, ...up.extra })
+        const res = await send({ model: input.model, messages: teamMessages(task, members, i, reports), stream: true, ...up.extra })
         job.route = res.headers.get("x-omniroute-decision") ?? job.route
         if (!res.ok || !res.body) {
           const f = await failure(res)
@@ -316,7 +349,7 @@ export async function runJob(id: string, secrets: JobSecrets, deps: { store: Job
       }
       if (job.status === "running") job.status = "done"
     } else {
-      const res = await post(input.request ? input.request.body : { model: input.model, messages: input.messages, stream: true, ...up.extra })
+      const res = await send(input.request ? input.request.body : { model: input.model, messages: input.messages, stream: true, ...up.extra })
       job.route = res.headers.get("x-omniroute-decision") ?? undefined
       if (!res.ok || !res.body) {
         const f = await failure(res)
@@ -343,6 +376,21 @@ export async function runJob(id: string, secrets: JobSecrets, deps: { store: Job
     clearTimeout(timer)
     clearInterval(watch)
   }
+  // One line per job in the function log: what ran and how it ended, never its content or keys.
+  console.log(
+    JSON.stringify({
+      event: "ai-job",
+      job: id.slice(0, 13),
+      kind: input.team ? "team" : input.request ? input.request.path : "chat",
+      provider: input.provider,
+      model: input.model,
+      status: job.status,
+      ms: Date.now() - startedAt,
+      ...(job.code ? { code: job.code } : {}),
+      ...(job.steps ? { steps: job.steps.length } : {}),
+      ...(retried ? { retried } : {}),
+    }),
+  )
   if (job.status === "stopped") await forget()
   else await save().catch(() => {})
 }

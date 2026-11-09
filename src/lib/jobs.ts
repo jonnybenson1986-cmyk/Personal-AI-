@@ -27,11 +27,21 @@ export interface JobStart {
   secrets: { openrouterKey?: string; omnirouteKey?: string }
 }
 
+/** Where jobs are started: its own address, so the site can rate-limit starts per visitor. */
+export const JOB_START = "/api/job-start"
+
 /** Starts a job; undefined when this server can't run them (then the app streams directly). */
 export async function startJob(req: JobStart, signal?: AbortSignal): Promise<string | undefined> {
+  // The same key on a retry gets the job already started, so a lost answer doesn't run it twice.
+  const payload = JSON.stringify({ ...req, idempotencyKey: crypto.randomUUID() })
+  const post = () => fetch(JOB_START, { method: "POST", headers: { "content-type": "application/json" }, body: payload, signal })
   let res: Response
   try {
-    res = await fetch("/api/jobs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(req), signal })
+    res = await post().catch(async (e) => {
+      if (signal?.aborted) throw e
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+      return post()
+    })
   } catch (e) {
     if (signal?.aborted) throw e
     return undefined

@@ -1,8 +1,9 @@
 import { createStore, produce, reconcile } from "solid-js/store"
 import { createSignal } from "solid-js"
 import { del, get, set } from "idb-keyval"
-import { DEFAULT_SELECTION, GATEWAY_AUTO } from "./models"
-import { errorMessage, isAbort, resumeChat, streamReply } from "./providers"
+import { fitMessages, type HistorySummary, inputBudget, summaryCovers, summaryRequest } from "./history"
+import { contextWindow, DEFAULT_SELECTION, GATEWAY_AUTO } from "./models"
+import { errorMessage, isAbort, resumeChat, streamChat, streamReply } from "./providers"
 import type { Attachment, Conversation, ModelRef, RepoTarget, Reply, Settings, Turn } from "./types"
 
 const SETTINGS_KEY = "personal-ai:settings"
@@ -295,24 +296,69 @@ async function streamOne(convId: string, turnId: string, model: ModelRef) {
 
   const snapshot = JSON.parse(JSON.stringify(conversations.find((c) => c.id === convId))) as Conversation
   const index = snapshot.turns.findIndex((t) => t.id === turnId)
+  const history = snapshot.turns.slice(0, index)
+  const budget = inputBudget(contextWindow(model.id))
 
-  await settle(
-    streamReply({
+  const run = async () => {
+    // A chat longer than the model can take: condense the oldest turns first, so it remembers them.
+    const { dropped } = fitMessages(snapshot.system, history, snapshot.turns[index], model, budget, snapshot.summary)
+    let condensed = summaryCovers(snapshot.summary, dropped, history)
+    if (!condensed) {
+      const summary = await condense(convId, snapshot.summary, dropped, history, model, controller.signal)
+      if (summary) {
+        snapshot.summary = summary
+        condensed = true
+      }
+    }
+    const result = await streamReply({
       conversation: snapshot,
-      history: snapshot.turns.slice(0, index),
+      history,
       current: snapshot.turns[index],
       model,
       credentials: settings,
       signal: controller.signal,
       events: replyEvents(update),
+      budget,
       job: {
         started: (id) => {
           update((r) => (r.job = id))
           void save(convId)
         },
       },
-    }),
-    update,
-    done,
-  )
+    })
+    const note = condensed ? undefined : "Older messages were left out to fit this model's memory."
+    return { ...result, notice: [note, result.notice].filter(Boolean).join(" ") || undefined }
+  }
+  await settle(run(), update, done)
+}
+
+// One summary at a time per chat (compare mode answers with two models at once).
+const condensing = new Map<string, Promise<HistorySummary | undefined>>()
+
+/** Summarizes the turns that no longer fit (adding to the summary so far) and saves it on the chat. */
+function condense(convId: string, previous: HistorySummary | undefined, dropped: Turn[], history: Turn[], model: ModelRef, signal: AbortSignal) {
+  if (!condensing.has(convId)) {
+    const from = previous ? history.findIndex((t) => t.id === previous.through) + 1 : 0
+    const task = (async () => {
+      let text = ""
+      try {
+        await streamChat({
+          messages: summaryRequest(previous, dropped.slice(Math.max(0, from)), model),
+          model,
+          credentials: settings,
+          signal,
+          events: { text: (d) => (text += d), thinking: () => {}, servedBy: () => {} },
+        })
+      } catch (e) {
+        if (isAbort(e)) throw e
+        return undefined
+      }
+      if (!text.trim()) return undefined
+      const summary = { text: text.trim(), through: dropped[dropped.length - 1].id }
+      mutate(convId, (c) => (c.summary = summary))
+      return summary
+    })().finally(() => condensing.delete(convId))
+    condensing.set(convId, task)
+  }
+  return condensing.get(convId)!
 }

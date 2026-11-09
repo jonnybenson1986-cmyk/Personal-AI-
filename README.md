@@ -94,11 +94,20 @@ Or follow the **Omni** screen in the app, which has these steps for each kind of
 
 A web app stops running when it's closed, so the work happens on Netlify instead:
 
-1. The app sends the request to `/api/jobs` (an edge function). It saves the request in [Netlify Blobs](https://docs.netlify.com/build/data-and-storage/netlify-blobs/) and starts the `run-job` [background function](https://docs.netlify.com/build/functions/background-functions/), which can run for up to 15 minutes whether or not anyone is watching.
+1. The app sends the request to `/api/job-start` (an edge function). It saves the request in [Netlify Blobs](https://docs.netlify.com/build/data-and-storage/netlify-blobs/) and starts the `run-job` [background function](https://docs.netlify.com/build/functions/background-functions/), which can run for up to 15 minutes whether or not anyone is watching.
 2. That function streams the reply from OpenRouter (or your OmniRoute gateway) and saves it as it arrives.
 3. The app reads the progress about once a second, so you still see the reply being written. If the app was closed, it picks the reply up when it opens again.
 
 Your keys go only with the request that starts a reply and are never stored. The saved request is deleted as soon as the reply starts, a finished reply is deleted once the app has it, and anything left over is cleaned up after a day. Background functions and Blobs are included in Netlify's free plan. When the server can't run a reply (when running locally with `npm run dev`, or with an OmniRoute address only your computer can reach, like `http://localhost:20128`), the app streams it directly as before, and it only finishes while the app is open. Edits in the Photo and Audio editors happen on your device and are instant.
+
+### Reliability and protection
+
+- **Long chats fit the model.** Each reply sends only what fits the chosen model's context window (60% of it, leaving room for the answer), newest messages first. When older messages no longer fit, the app asks the model once to summarize them and keeps that summary with the chat, so it still remembers the start; if that fails it says older messages were left out. Pictures are resent only for the last two messages.
+- **Busy free models fall back.** A chosen free model is sent with OpenRouter's fallback list (`models: [your model, "openrouter/free"]`), so if it's busy, rate-limited or down, another free model answers instead of an error.
+- **Background jobs retry and don't double up.** The server tries a busy or briefly failing provider (429, 500, 502, 503, 504) once more before any text, after its `Retry-After` (up to 8 seconds). Each start carries a one-off key, so if the connection drops and the app retries, it gets the job already running instead of a second one.
+- **Rate limits per visitor.** Job starts (`/api/job-start`, 20 a minute) and the OpenRouter proxy (`/api/openrouter`, 60 a minute) are rate-limited by Netlify, so a script can't drain the site's free key or Netlify credits. Following a running job isn't limited.
+- **Job logs.** Each background job writes one line to the function log in Netlify (kind, provider, model, result, time, retries), never its content or keys.
+- **Smoke test.** `npm run smoke -- https://your-site.netlify.app` checks the live site end to end: status, free models, a background reply, an agent report, the page reader and the agents. It uses about two free requests.
 
 ### Free model limits
 

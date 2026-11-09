@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js"
-import { DEFAULT_MODELS, GATEWAY_AUTO } from "./models"
+import { DEFAULT_MODELS, GATEWAY_AUTO, rememberWindows } from "./models"
 import { ROUTING_MODES } from "./omni"
 import { type Credentials, errorMessage, lastGatewayModels, listModels, serverStatus } from "./providers"
 import { gatewayReady, setSiteGateway, setSiteOpenRouter } from "./route"
@@ -46,6 +46,7 @@ export async function refreshCatalog(credentials?: Credentials) {
     try {
       const live = await listModels(credentials)
       setGatewayError(undefined)
+      rememberWindows(live)
       setCatalog(live.length ? live : GATEWAY_FALLBACK)
       // The count is what the gateway offers, not the routing modes the picker always adds.
       return live.filter((m) => !ROUTING_MODES.some((r) => r.id === m.id) || lastGatewayModels.some((g) => g.id === m.id)).length
@@ -56,6 +57,7 @@ export async function refreshCatalog(credentials?: Credentials) {
     }
   }
   const live = await listModels().catch(() => [] as ModelInfo[])
+  rememberWindows(live)
   setCatalog(live.length ? live : DEFAULT_MODELS)
   return live.length
 }
