@@ -20,7 +20,19 @@ export default async (req: Request, context: Context) => {
     const keys = await s.list("rl/read/")
     const mine = keys.filter((k) => k.includes(ipNow))
     const counts = await Promise.all(mine.map((k) => s.get(k)))
-    check = `keys=${keys.length} mine=${mine.length} counts=${JSON.stringify(counts).slice(0, 80)} overLimit=${String(await overLimit(s, "read", ipNow, 30))}`
+    const trace: string[] = []
+    const probeKey = "rl/diagtest/" + ipNow.replace(/[^0-9a-z]/gi, "-") + "/" + Math.floor(Date.now() / 60000)
+    for (let i = 0; i < 3; i++) {
+      try {
+        const before = await s.get(probeKey)
+        await s.set(probeKey, Number(before ?? 0) + 1)
+        const after = await s.get(probeKey)
+        trace.push(`b${JSON.stringify(before)}a${JSON.stringify(after)}`)
+      } catch (e) {
+        trace.push("err:" + (e instanceof Error ? e.message : String(e)).slice(0, 60))
+      }
+    }
+    check = `keys=${keys.length} mine=${mine.length} counts=${JSON.stringify(counts).slice(0, 60)} trace=${trace.join("|")}`
   } catch (e) {
     check = "check-err " + (e instanceof Error ? e.message : String(e))
   }
