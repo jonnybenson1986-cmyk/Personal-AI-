@@ -1,39 +1,11 @@
 import type { Config, Context } from "@netlify/edge-functions"
 import { blobLimitStore } from "../shared/blobstore.ts"
-import { limitResponse, overLimit, visitorIp } from "../shared/limit.ts"
+import { limitResponse, visitorIp } from "../shared/limit.ts"
 import { readPage } from "../shared/read.ts"
 
-// TEMPORARY DIAGNOSTIC: reports the counter store and the visitor address in a header.
-export default async (req: Request, context: Context) => {
-  let note: string
-  try {
-    const s = blobLimitStore()
-    await s.set("probe/diag", Date.now())
-    note = "store-ok read=" + String(await s.get("probe/diag"))
-  } catch (e) {
-    note = "store-err " + (e instanceof Error ? e.message : String(e))
-  }
-  const ipNow = visitorIp(req, context.ip) ?? "none"
-  let check = ""
-  try {
-    const s = blobLimitStore()
-    const keys = await s.list("rl/read/")
-    const mine = keys.filter((k) => k.includes(ipNow))
-    const counts = await Promise.all(mine.map((k) => s.get(k)))
-    const win = Math.floor(Date.now() / 60000)
-    const realKey = `rl/read/${ipNow}/${win}`
-    const beforeVal = await s.get(realKey)
-    const wait = await overLimit(s, "read", ipNow, 30)
-    const afterVal = await s.get(realKey)
-    const trace = [`key=${realKey}`, `before=${JSON.stringify(beforeVal)}`, `after=${JSON.stringify(afterVal)}`, `wait=${String(wait)}`]
-    check = `keys=${keys.length} mine=${mine.length} counts=${JSON.stringify(counts).slice(0, 60)} ${trace.join(" ")}`
-  } catch (e) {
-    check = "check-err " + (e instanceof Error ? e.message : String(e))
-  }
-  const res = (await limitResponse(blobLimitStore(), "read", visitorIp(req, context.ip), 30)) ?? (await readPage(req))
-  const out = new Response(res.body, res)
-  out.headers.set("x-rl-debug", (note + " " + check + " status=" + res.status).replace(/[^\x20-\x7e]/g, "?").slice(0, 400))
-  return out
-}
+// Each call downloads a page from the internet, so each visitor gets a few a minute: the
+// reader can't be used as a free fetch service.
+export default async (req: Request, context: Context) =>
+  (await limitResponse(blobLimitStore(), "read", visitorIp(req, context.ip), 30)) ?? readPage(req)
 
 export const config: Config = { path: "/api/read" }
