@@ -15,5 +15,6 @@ export default (req: Request) =>
 export const config: Config = {
   path: "/api/job-start",
   // A person sends a few messages a minute; this stops a script from running up the site's credits.
+  // Netlify's own rule: the free plan allows two per site, so this and /api/openrouter are the two.
   rateLimit: { windowLimit: 20, windowSize: 60, aggregateBy: ["ip", "domain"] },
 }

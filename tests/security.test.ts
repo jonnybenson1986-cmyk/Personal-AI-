@@ -88,3 +88,23 @@ test("the proxy answers malformed JSON with 400 for a visitor using the site's k
   const res = await proxy(req, upstream, (n) => (n === "OPENROUTER_API_KEY" ? "sk-or-site" : undefined))
   assert.equal(res.status, 400)
 })
+
+test("the visitor limit allows the allowance, refuses the next request with a wait, and resets each minute", async () => {
+  const { overLimit, purgeLimits } = await import("../netlify/shared/limit.ts")
+  const data = new Map<string, unknown>()
+  const store = {
+    get: async (k: string) => data.get(k) ?? null,
+    set: async (k: string, v: unknown) => void data.set(k, v),
+    list: async (p: string) => [...data.keys()].filter((k) => k.startsWith(p)),
+    delete: async (k: string) => void data.delete(k),
+  }
+  const t = Date.UTC(2026, 10, 10, 12, 0, 10) // 10 seconds into a minute
+  for (let i = 0; i < 3; i++) assert.equal(await overLimit(store, "read", "1.2.3.4", 3, t), undefined)
+  const wait = await overLimit(store, "read", "1.2.3.4", 3, t)
+  assert.equal(wait, 50) // 50 seconds to the next minute
+  assert.equal(await overLimit(store, "read", "5.6.7.8", 3, t), undefined, "another visitor is counted separately")
+  assert.equal(await overLimit(store, "read", "1.2.3.4", 3, t + 60_000), undefined, "a new minute starts fresh")
+  assert.equal(await overLimit(store, "omniroute", "1.2.3.4", 3, t), undefined, "each endpoint is counted separately")
+  await purgeLimits(store, t + 2 * 3_600_000)
+  assert.equal(data.size, 0)
+})
