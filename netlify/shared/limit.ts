@@ -20,9 +20,18 @@ export async function overLimit(store: CounterStore, scope: string, ip: string, 
   return undefined
 }
 
-/** A 429 for an over-limit visitor, or undefined to carry on. Fails open: a storage fault never blocks a visitor. */
+/** The visitor's address: the edge's own value, or Netlify's header for it. */
+export function visitorIp(req: Request, contextIp?: string) {
+  return contextIp || req.headers.get("x-nf-client-connection-ip") || undefined
+}
+
+/**
+ * A 429 for an over-limit visitor, or undefined to carry on. Fails open: a storage fault never
+ * blocks a visitor. If no address is known, the visitor is counted under one shared key, so
+ * the limit still applies rather than being skipped.
+ */
 export async function limitResponse(store: CounterStore, scope: string, ip: string | undefined, limit: number): Promise<Response | undefined> {
-  if (!ip) return undefined
+  ip ??= "unknown"
   try {
     const wait = await overLimit(store, scope, ip, limit)
     if (wait === undefined) return undefined

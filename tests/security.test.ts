@@ -108,3 +108,22 @@ test("the visitor limit allows the allowance, refuses the next request with a wa
   await purgeLimits(store, t + 2 * 3_600_000)
   assert.equal(data.size, 0)
 })
+
+test("the visitor's address comes from the edge, or Netlify's header, and is never skipped", async () => {
+  const { visitorIp, limitResponse } = await import("../netlify/shared/limit.ts")
+  const req = new Request("https://site.example/api/read", { headers: { "x-nf-client-connection-ip": "9.9.9.9" } })
+  assert.equal(visitorIp(req, "1.1.1.1"), "1.1.1.1")
+  assert.equal(visitorIp(req), "9.9.9.9")
+  assert.equal(visitorIp(new Request("https://site.example/")), undefined)
+  const data = new Map<string, unknown>()
+  const store = {
+    get: async (k: string) => data.get(k) ?? null,
+    set: async (k: string, v: unknown) => void data.set(k, v),
+    list: async () => [],
+    delete: async () => {},
+  }
+  // With no address at all, the shared counter still limits.
+  let refused = 0
+  for (let i = 0; i < 5; i++) if (await limitResponse(store, "read", undefined, 2)) refused++
+  assert.equal(refused, 3)
+})
