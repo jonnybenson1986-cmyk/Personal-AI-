@@ -1,11 +1,11 @@
-import type { Config } from "@netlify/edge-functions"
+import type { Config, Context } from "@netlify/edge-functions"
+import { blobLimitStore } from "../shared/blobstore.ts"
 import { gatewayProxy } from "../shared/gateway.ts"
+import { limitResponse } from "../shared/limit.ts"
 
-export default (req: Request) => gatewayProxy(req, (name) => Netlify.env.get(name))
+// Relays requests to a public OmniRoute gateway, so each visitor gets a generous minute's worth:
+// the site can't be used as a general relay to other HTTPS addresses.
+export default async (req: Request, context: Context) =>
+  (await limitResponse(blobLimitStore(), "omniroute", context.ip, 120)) ?? gatewayProxy(req, (name) => Netlify.env.get(name))
 
-// Relays requests to a public OmniRoute gateway: limited per visitor so the site can't be used
-// as a general relay to other HTTPS addresses.
-export const config: Config = {
-  path: "/api/omniroute/*",
-  rateLimit: { windowLimit: 120, windowSize: 60, aggregateBy: ["ip", "domain"] },
-}
+export const config: Config = { path: "/api/omniroute/*" }

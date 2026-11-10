@@ -9,6 +9,7 @@
 // after a day).
 import { gatewayBase, siteGateway } from "./gateway.ts"
 import { freeFallback, isFreeModel, json, PLACEHOLDER_KEY } from "./proxy.ts"
+import { purgeLimits } from "./limit.ts"
 import { readTeam, type TeamMember, teamMessages } from "./team.ts"
 
 export interface JobStore {
@@ -200,6 +201,7 @@ export async function jobsApi(
 
 /** Removes jobs (and leftovers) older than a day. */
 export async function purgeOld(store: JobStore, now = Date.now()) {
+  await purgeLimits(store, now).catch(() => {})
   for (const prefix of ["job/", "input/", "cancel/"]) {
     const keys = await store.list(prefix)
     await Promise.all(keys.filter((k) => now - jobTime(k.slice(prefix.length)) > KEEP_MS).map((k) => store.delete(k)))

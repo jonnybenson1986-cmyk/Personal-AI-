@@ -12,3 +12,14 @@ export function blobJobStore(): JobStore {
     list: async (prefix) => (await store.list({ prefix })).blobs.map((b) => b.key),
   }
 }
+
+/** Per-visitor request counters (see limit.ts). */
+export function blobLimitStore() {
+  const store = getStore({ name: "rate-limits" })
+  return {
+    get: (key: string) => store.get(key, { type: "json" }),
+    set: async (key: string, value: unknown) => void (await store.setJSON(key, value)),
+    list: async (prefix: string) => (await store.list({ prefix })).blobs.map((b) => b.key),
+    delete: (key: string) => store.delete(key),
+  }
+}
