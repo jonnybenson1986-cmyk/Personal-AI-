@@ -188,6 +188,11 @@ node --experimental-strip-types scripts/import-agents.ts /tmp/agency-agents
 
 ## Run locally
 
+- `npm run dev:site` runs the app together with its `/api` functions, the way it runs on Netlify (uses the Netlify CLI, which reads `.env`, so put `OPENROUTER_API_KEY` there for the site's key). Use this to chat locally.
+- `npm run dev` runs the app only. It has no `/api` routes, so chat, the page reader and background replies can't reach the AI in this mode.
+
+## Run locally (app only)
+
 ```bash
 npm install
 npx netlify-cli dev       # app + edge functions on http://localhost:8888

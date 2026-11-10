@@ -2,6 +2,18 @@
 
 const MAX_BYTES = 3_000_000
 const MAX_CHARS = 60_000
+export const MAX_REDIRECTS = 3
+const TIMEOUT_MS = 15_000
+
+/** A failure with the HTTP status to answer with. */
+export class ReaderError extends Error {
+  readonly status: number
+
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
 
 /** Only public http(s) sites: no local, private-network or bare-IP addresses. */
 export function allowedUrl(input: string | null): URL | undefined {
@@ -50,6 +62,33 @@ export function htmlToText(html: string) {
   return { title, text: text.length > MAX_CHARS ? text.slice(0, MAX_CHARS) + "\n\n[Page cut short]" : text }
 }
 
+/**
+ * Fetches a page, following redirects by hand: every address it moves to is checked by
+ * allowedUrl like the first one, so a public page can't send the reader to a private address.
+ * One deadline covers all the hops.
+ */
+export async function fetchPublic(start: URL, doFetch: typeof fetch = fetch): Promise<{ res: Response; url: URL }> {
+  const signal = AbortSignal.timeout(TIMEOUT_MS)
+  let url = start
+  for (let hop = 0; ; hop++) {
+    const res = await doFetch(url, {
+      headers: { "user-agent": "Mozilla/5.0 (compatible; JonnysAI/1.0; +reader)", accept: "text/html,text/plain;q=0.9,*/*;q=0.5" },
+      redirect: "manual",
+      signal,
+    })
+    const location = res.headers.get("location")
+    if (res.status >= 300 && res.status < 400 && location) {
+      await res.body?.cancel().catch(() => {})
+      if (hop >= MAX_REDIRECTS) throw new ReaderError(502, "That page redirected too many times.")
+      const next = allowedUrl(new URL(location, url).href)
+      if (!next) throw new ReaderError(400, "That page redirects somewhere the AI can't read.")
+      url = next
+      continue
+    }
+    return { res, url }
+  }
+}
+
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } })
 }
@@ -58,17 +97,15 @@ export async function readPage(req: Request) {
   // Only this app's own pages may use the reader (browsers send this header).
   const site = req.headers.get("sec-fetch-site")
   if (site && site !== "same-origin") return json(403, { error: { message: "Not allowed." } })
-  const url = allowedUrl(new URL(req.url).searchParams.get("url"))
-  if (!url) return json(400, { error: { message: "That doesn't look like a public web address." } })
+  const start = allowedUrl(new URL(req.url).searchParams.get("url"))
+  if (!start) return json(400, { error: { message: "That doesn't look like a public web address." } })
 
   let res: Response
+  let url: URL
   try {
-    res = await fetch(url, {
-      headers: { "user-agent": "Mozilla/5.0 (compatible; JonnysAI/1.0; +reader)", accept: "text/html,text/plain;q=0.9,*/*;q=0.5" },
-      redirect: "follow",
-      signal: AbortSignal.timeout(15_000),
-    })
-  } catch {
+    ;({ res, url } = await fetchPublic(start))
+  } catch (e) {
+    if (e instanceof ReaderError) return json(e.status, { error: { message: e.message } })
     return json(502, { error: { message: "Couldn't reach that site." } })
   }
   if (!res.ok) return json(502, { error: { message: `The site returned ${res.status}.` } })
@@ -95,5 +132,5 @@ export async function readPage(req: Request) {
   const raw = new TextDecoder().decode(bytes)
   const page = /html|xhtml/.test(type) ? htmlToText(raw) : { title: "", text: raw.slice(0, MAX_CHARS) }
   if (!page.text) return json(422, { error: { message: "That page has no readable text (it may need JavaScript)." } })
-  return json(200, { url: res.url || url.href, ...page })
+  return json(200, { url: url.href, ...page })
 }

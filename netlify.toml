@@ -2,6 +2,14 @@
   command = "npm run build"
   publish = "dist"
 
+# `npm run dev:site` (netlify dev): the app from Vite on port 8888, with the /api functions live
+# alongside it. Plain `npm run dev` serves the app only, with no /api, so the AI can't be reached.
+[dev]
+  command = "npm run dev -- --port 5173 --strictPort"
+  targetPort = 5173
+  port = 8888
+  framework = "#custom"
+
 [build.environment]
   NODE_VERSION = "22"
 
@@ -18,6 +26,13 @@
     Referrer-Policy = "no-referrer"
     X-Frame-Options = "DENY"
     Permissions-Policy = "camera=(), geolocation=()"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # Report-only: violations are logged in the browser console, nothing is blocked. Switch the
+    # name to Content-Security-Policy once the console shows no reports during normal use.
+    Content-Security-Policy-Report-Only = "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; connect-src 'self' https: wss: http://localhost:* http://127.0.0.1:*; worker-src 'self' blob:; manifest-src 'self'; frame-src 'self' blob:; child-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 
 [[headers]]
   for = "/assets/*"

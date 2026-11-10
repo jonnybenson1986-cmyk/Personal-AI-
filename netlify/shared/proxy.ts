@@ -40,18 +40,32 @@ export function freeFallback(model: string): { models?: string[] } {
   return isFreeModel(model) && model !== "openrouter/free" ? { models: [model, "openrouter/free"] } : {}
 }
 
-/** Why a request may not use the site's key, if it may not. */
-export function paidFeature(body: ArrayBuffer) {
+/** A reason to refuse a request, with the HTTP status for it. */
+export interface Refusal {
+  status: number
+  message: string
+}
+
+/** Chat requests with pictures are the largest; anything bigger is refused before it's read. */
+export const MAX_BODY_BYTES = 8 * 1024 * 1024
+
+/**
+ * Why a request may not use the site's key, if it may not. Malformed JSON is the caller's
+ * error (400); a valid request for a paid model or plugin is refused (403).
+ */
+export function paidFeature(body: ArrayBuffer): Refusal | undefined {
   let request: Record<string, unknown>
   try {
     request = JSON.parse(new TextDecoder().decode(body))
   } catch {
-    return "Invalid request."
+    return { status: 400, message: "Invalid request: the body isn't valid JSON." }
   }
-  if (!isFreeModel(request.model)) return "The site's key only works with free models."
-  if (Array.isArray(request.models) && !request.models.every(isFreeModel)) return "The site's key only works with free models."
+  if (!request || typeof request !== "object" || Array.isArray(request)) return { status: 400, message: "Invalid request: expected a JSON object." }
+  if (!isFreeModel(request.model)) return { status: 403, message: "The site's key only works with free models." }
+  if (request.models !== undefined && (!Array.isArray(request.models) || !request.models.every(isFreeModel)))
+    return { status: 403, message: "The site's key only works with free models." }
   // Plugins such as web search are billed even on free models.
-  if (request.plugins !== undefined) return "The site's key can't use paid plugins."
+  if (request.plugins !== undefined) return { status: 403, message: "The site's key can't use paid plugins." }
   return undefined
 }
 
@@ -66,13 +80,17 @@ export async function proxy(req: Request, upstream: Upstream, env: (name: string
   const rules = upstream.allow[req.method] ?? []
   if (!rules.some((rule) => rule.test(path))) return json(404, { error: { message: `Not allowed: ${req.method} ${path}` } })
 
+  // Refuse oversized bodies from the declared length, before reading them into memory.
+  const declared = Number(req.headers.get("content-length") ?? 0)
+  if (declared > MAX_BODY_BYTES) return json(413, { error: { message: "That's too much to send in one message." } })
   const body = req.method === "GET" || req.method === "HEAD" ? undefined : await req.arrayBuffer()
+  if (body && body.byteLength > MAX_BODY_BYTES) return json(413, { error: { message: "That's too much to send in one message." } })
   let key = userKey(req)
   if (!key && !upstream.open.some((rule) => rule.test(path))) {
     key = env(upstream.keyEnv)
     if (!key) return json(401, { error: { message: "Add your free OpenRouter key in Settings to start chatting." } })
-    const paid = body && paidFeature(body)
-    if (paid) return json(403, { error: { message: paid } })
+    const refused = body && paidFeature(body)
+    if (refused) return json(refused.status, { error: { message: refused.message } })
   }
 
   const headers = new Headers({ "http-referer": url.origin, "x-openrouter-title": "Jonny's AI project" })
