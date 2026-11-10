@@ -15,7 +15,8 @@ export function blobJobStore(): JobStore {
 
 /** Per-visitor request counters (see limit.ts). */
 export function blobLimitStore() {
-  const store = getStore({ name: "rate-limits" })
+  // Strong consistency: an eventually consistent read can return an old count, so the limit would never bite.
+  const store = getStore({ name: "rate-limits", consistency: "strong" })
   return {
     get: (key: string) => store.get(key, { type: "json" }),
     set: async (key: string, value: unknown) => void (await store.setJSON(key, value)),
