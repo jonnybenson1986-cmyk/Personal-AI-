@@ -1,7 +1,7 @@
 import { createSignal, type JSX, Show } from "solid-js"
 import { canChat, catalog, gatewayError, refreshCatalog, refreshStatus } from "../lib/catalog"
 import { DEFAULT_SELECTION, GATEWAY_AUTO } from "../lib/models"
-import { gatewayReady, gatewayRoute, isThisDevice, siteGateway } from "../lib/route"
+import { CHEAPER_INFERENCE_URL, isCheaperInference, gatewayReady, gatewayRoute, isThisDevice, siteGateway } from "../lib/route"
 import { isIOS } from "../lib/install"
 import { clearAll, settings, updateSettings } from "../lib/store"
 import type { Provider, Settings } from "../lib/types"
@@ -53,6 +53,39 @@ function KeyField(props: { label: string; hint: string; value: string; placehold
   )
 }
 
+export function CheaperInferenceSetup() {
+  const [testing, setTesting] = createSignal(false)
+  const [result, setResult] = createSignal<string>()
+  const selected = () => isCheaperInference(settings.omnirouteUrl)
+  return <section class="ai-box">
+    <h3>Cheaper Inference · direct connection</h3>
+    <p class="small-text">Connect from your phone with no OmniRoute server to install. Requests use your Cheaper Inference account and may incur charges.</p>
+    <button class="button ghost" onClick={() => {
+      updateSettings({ provider: "omniroute", omnirouteUrl: CHEAPER_INFERENCE_URL, ...(selected() ? {} : { omnirouteKey: "", models: [] }) })
+      setResult(undefined)
+    }}>{selected() ? "Cheaper Inference selected" : "Use Cheaper Inference"}</button>
+    <Show when={selected()}>
+      <button class="button ghost" onClick={() => {
+        updateSettings({ omnirouteUrl: "", omnirouteKey: "", models: [{ id: GATEWAY_AUTO }] })
+        setResult(undefined)
+      }}>Set up OmniRoute instead</button>
+      <p class="small-text"><code>{CHEAPER_INFERENCE_URL}</code></p>
+      <KeyField label="Cheaper Inference API key" hint="Create a key in your Cheaper Inference account. Saved only on this device and sent through this site's proxy to the provider." placeholder="Your Cheaper Inference API key" value={settings.omnirouteKey} onSave={(omnirouteKey) => { updateSettings({ omnirouteKey }); setResult(undefined) }} />
+      <button class="button" disabled={testing() || !settings.omnirouteKey.trim()} onClick={async () => {
+        setTesting(true)
+        setResult(undefined)
+        try {
+          updateSettings({ provider: "omniroute" })
+          await refreshStatus(settings)
+          setResult(gatewayError() || (catalog().length ? `Catalog connected: ${catalog().length} chat models. Choose a model and send a message to verify inference.` : "No chat models returned by this account."))
+        } finally { setTesting(false) }
+      }}>{testing() ? "Testing…" : "Test Cheaper Inference"}</button>
+      <Show when={result()}><p class="notice small-text" role="status">{result()}</p></Show>
+      <p class="small-text muted">Chat, Code, Design and Cowork share this connection. Photo, Audio and Video require models and endpoints supported by your account. Search, page reading, OCR, music and OmniRoute usage require an OmniRoute server.</p>
+    </Show>
+  </section>
+}
+
 function OmniRouteFields(props: { onSave: (patch: Partial<Settings>) => void }) {
   const [testing, setTesting] = createSignal(false)
   const [result, setResult] = createSignal<string>()
@@ -66,6 +99,8 @@ function OmniRouteFields(props: { onSave: (patch: Partial<Settings>) => void }) 
   }
   return (
     <>
+      <CheaperInferenceSetup />
+      <Show when={!isCheaperInference(settings.omnirouteUrl)}>
       <p class="muted small-text">
         OmniRoute is a free AI gateway you run yourself. It connects many providers' free tiers behind one endpoint, with automatic fallback.
         Install it with <code>npm install -g omniroute</code>, run <code>omniroute</code>, and connect providers in its dashboard.
@@ -122,6 +157,7 @@ function OmniRouteFields(props: { onSave: (patch: Partial<Settings>) => void }) 
       <Show when={!result() && !gatewayError() && catalog().length > 1}>
         <p class="small-text key-status">{catalog().length} models available.</p>
       </Show>
+      </Show>
     </>
   )
 }
@@ -140,7 +176,7 @@ export function SettingsDialog(props: { onClose: () => void }) {
           value={settings.provider}
           options={[
             { value: "openrouter", label: "OpenRouter (free)" },
-            { value: "omniroute", label: "OmniRoute" },
+            { value: "omniroute", label: "OmniRoute / Cheaper Inference" },
           ]}
           onChange={(provider) => {
             // Model names differ between providers, so start each one on its own auto model.
