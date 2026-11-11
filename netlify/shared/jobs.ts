@@ -1,3 +1,4 @@
+import { inferenceFetch } from "./inference.ts"
 // Background AI jobs: a reply is generated on the server, so it keeps going when the app is
 // closed or the phone locks. The app posts the request to /api/jobs (an edge function), which
 // saves it and starts the run-job background function (up to 15 minutes). That function
@@ -289,7 +290,7 @@ export async function runJob(id: string, secrets: JobSecrets, deps: { store: Job
     ? setInterval(() => void store.get(`cancel/${id}`).then((c) => c && controller.abort(new Error("cancelled")), () => {}), 2000)
     : undefined
   const post = (body: unknown) =>
-    fetch(up.url, {
+    inferenceFetch(up.url, {
       method: "POST",
       signal: controller.signal,
       headers: {

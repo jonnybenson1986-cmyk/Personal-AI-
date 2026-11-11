@@ -44,3 +44,6 @@ export function gatewayFor(raw: string): { mode: "proxy" | "direct"; base: strin
 
 /** Whether OmniRoute can be used: an address and key in the app, or the site's own gateway. */
 export const gatewayReady = (raw: string, key: string) => (raw.trim() ? !!gatewayRoute(raw) && !!key.trim() : siteGateway())
+
+export const CHEAPER_INFERENCE_URL = "https://api.cheaperinference.com/v1"
+export const isCheaperInference = (raw: string) => gatewayRoute(raw)?.base === "https://api.cheaperinference.com"

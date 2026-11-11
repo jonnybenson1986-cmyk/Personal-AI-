@@ -1,3 +1,4 @@
+import { inferenceFetch } from "./inference.ts"
 // Proxy to the user's own OpenAI-compatible gateway (OmniRoute) when it has a public https
 // address. The browser can't call it directly unless the gateway allows this site's origin,
 // so requests come here and are passed on with the user's own gateway key. Only the model
@@ -71,7 +72,7 @@ export async function gatewayProxy(req: Request, env: Env = () => undefined) {
 
   let res: Response
   try {
-    res = await fetch(base + path + url.search, {
+    res = await inferenceFetch(base + path + url.search, {
       method: req.method,
       headers: { authorization: auth, "content-type": req.headers.get("content-type") ?? "application/json", accept: req.headers.get("accept") ?? "*/*" },
       body: req.method === "POST" ? await req.arrayBuffer() : undefined,

@@ -2,8 +2,8 @@ import { createSignal } from "solid-js"
 import { DEFAULT_MODELS, GATEWAY_AUTO, rememberWindows } from "./models"
 import { ROUTING_MODES } from "./omni"
 import { type Credentials, errorMessage, lastGatewayModels, listModels, serverStatus } from "./providers"
-import { gatewayReady, setSiteGateway, setSiteOpenRouter } from "./route"
-import { updateSettings } from "./store"
+import { gatewayReady, isCheaperInference, setSiteGateway, setSiteOpenRouter } from "./route"
+import { settings, updateSettings } from "./store"
 import type { ModelInfo } from "./types"
 
 /** Whether the app has a key it can chat with; undefined until checked. */
@@ -40,19 +40,24 @@ export async function refreshCatalog(credentials?: Credentials) {
   if (credentials?.provider === "omniroute") {
     if (!gatewayReady(credentials.omnirouteUrl ?? "", credentials.omnirouteKey ?? "")) {
       setGatewayError(undefined)
-      setCatalog(GATEWAY_FALLBACK)
+      setCatalog(isCheaperInference(credentials.omnirouteUrl ?? "") ? [] : GATEWAY_FALLBACK)
       return 0
     }
     try {
       const live = await listModels(credentials)
       setGatewayError(undefined)
       rememberWindows(live)
-      setCatalog(live.length ? live : GATEWAY_FALLBACK)
+      const direct = isCheaperInference(credentials.omnirouteUrl ?? "")
+      setCatalog(live.length ? live : direct ? [] : GATEWAY_FALLBACK)
+      if (direct && live.length && credentials.omnirouteUrl === settings.omnirouteUrl) {
+        const selected = settings.models.filter((m) => live.some((g) => g.id === m.id))
+        updateSettings({ models: selected.length ? selected : [{ id: live[0].id }] })
+      }
       // The count is what the gateway offers, not the routing modes the picker always adds.
       return live.filter((m) => !ROUTING_MODES.some((r) => r.id === m.id) || lastGatewayModels.some((g) => g.id === m.id)).length
     } catch (e) {
       setGatewayError(errorMessage(e))
-      setCatalog(GATEWAY_FALLBACK)
+      setCatalog(isCheaperInference(credentials.omnirouteUrl ?? "") ? [] : GATEWAY_FALLBACK)
       return 0
     }
   }

@@ -73,9 +73,9 @@ export interface GatewayModel {
 const NOT_GATEWAY_CHAT = new Set(["embedding", "image", "rerank", "audio", "moderation", "video", "music", "tts", "stt"])
 
 /** The chat models (and combos) from an OpenAI-compatible gateway's model list, auto first. */
-export function filterGatewayModels(list: GatewayModel[]): ModelInfo[] {
+export function filterGatewayModels(list: GatewayModel[], routingModes = true): ModelInfo[] {
   const models = list
-    .filter((m) => typeof m.id === "string" && (!m.type || !NOT_GATEWAY_CHAT.has(m.type)))
+    .filter((m) => typeof m.id === "string" && (!m.type || !NOT_GATEWAY_CHAT.has(m.type)) && (routingModes || !NOT_CHAT.test(m.id)))
     .map((m): ModelInfo => {
       const vision = m.capabilities?.vision === true || !!m.input_modalities?.includes("image")
       const context = m.context_length ? `${Math.round(m.context_length / 1000)}K context` : undefined
@@ -88,6 +88,7 @@ export function filterGatewayModels(list: GatewayModel[]): ModelInfo[] {
         vision,
       }
     })
+  if (!routingModes) return models.sort((a, b) => a.label.localeCompare(b.label))
   // OmniRoute's routing modes always come first, with plain names, even if the list omits them.
   const modes: ModelInfo[] = ROUTING_MODES.map((m) => ({ id: m.id, label: m.label, hint: m.hint, vision: models.find((x) => x.id === m.id)?.vision }))
   const auto = models.filter((m) => (m.id === GATEWAY_AUTO || m.id.startsWith(`${GATEWAY_AUTO}/`)) && !ROUTING_MODES.some((r) => r.id === m.id))
