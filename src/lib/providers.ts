@@ -8,7 +8,7 @@ import { freeFallback } from "../../netlify/shared/proxy.ts"
 import { followJob, JobError, restartEvents, startJob } from "./jobs"
 import { isIOS } from "./install"
 import { AUTO_MODEL } from "./models"
-import { gatewayFor, isThisDevice, siteOpenRouter } from "./route"
+import { gatewayFor, isCheaperInference, isThisDevice, siteOpenRouter } from "./route"
 import { findTool } from "./tools"
 import type { Conversation, ModelInfo, ModelRef, Provider, StreamEvents, StreamResult, Turn } from "./types"
 
@@ -226,7 +226,7 @@ export async function listModels(credentials?: Credentials): Promise<ModelInfo[]
   if (credentials?.provider === "omniroute") {
     const page = await client(credentials).models.list()
     lastGatewayModels = page.data as unknown as GatewayModel[]
-    return filterGatewayModels(lastGatewayModels)
+    return filterGatewayModels(lastGatewayModels, !isCheaperInference(credentials.omnirouteUrl ?? ""))
   }
   const res = await fetch("/api/openrouter/v1/models")
   if (!res.ok) throw new Error(`Model list failed: ${res.status}`)
@@ -256,7 +256,7 @@ export function errorMessage(error: unknown) {
       message = body?.error?.message ?? body?.message ?? error.message
     }
     if (error.status === 401 && !/Settings/.test(message))
-      return lastGateway ? "OmniRoute didn't accept the API key. Check it in Settings → OmniRoute." : "OpenRouter didn't accept the key. Check it in Settings → OpenRouter key."
+      return lastGateway ? "The gateway didn't accept the API key. Check it in Settings → AI provider." : "OpenRouter didn't accept the key. Check it in Settings → OpenRouter key."
     if (error instanceof OpenAI.APIConnectionError && lastGateway?.mode === "direct" && isIOS() && isThisDevice(lastGateway.base))
       return `${lastGateway.base} means this iPhone itself, and OmniRoute can't run on an iPhone. Use the https address of your OmniRoute cloud server or your computer's Cloudflare tunnel instead (Omni → Set up).`
     if (error instanceof OpenAI.APIConnectionError && lastGateway?.mode === "direct")
