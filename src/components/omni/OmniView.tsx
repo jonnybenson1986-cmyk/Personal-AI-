@@ -26,9 +26,9 @@ import {
   usageSummary,
 } from "../../lib/omni"
 import { makeMusic, makeVideo, omniConfigured, omniModels, omniStatus, omniUsage, readDocument, readPage, resumeOmni, webSearch } from "../../lib/omniapi"
-import { gatewayRoute, isThisDevice, siteGateway } from "../../lib/route"
+import { gatewayRoute, isCheaperInference, isThisDevice, siteGateway } from "../../lib/route"
 import { settings, updateSettings } from "../../lib/store"
-import { Segmented } from "../Dialogs"
+import { CheaperInferenceSetup, Segmented } from "../Dialogs"
 import { IconCopy, IconDownload, IconFile, IconGlobe, IconHub, IconMenu, IconMusic, IconSearch, IconStop, IconTrash, IconVideo } from "../icons"
 
 type Tab = "setup" | "tools" | "providers"
@@ -243,6 +243,8 @@ function Setup(props: { status: { models: number; version?: string } | { error: 
   const steps = createMemo(() => connectSteps(location.origin))
   return (
     <>
+      <CheaperInferenceSetup />
+      <Show when={!isCheaperInference(settings.omnirouteUrl)}>
       <section class="ai-box">
         <h3>What OmniRoute is</h3>
         <p class="small-text">
@@ -420,6 +422,7 @@ function Setup(props: { status: { models: number; version?: string } | { error: 
           )}
         </Show>
       </section>
+      </Show>
     </>
   )
 }
