@@ -4,6 +4,8 @@ import { del, get, set } from "idb-keyval"
 import { fitMessages, type HistorySummary, inputBudget, summaryCovers, summaryRequest } from "./history"
 import { contextWindow, DEFAULT_SELECTION, GATEWAY_AUTO } from "./models"
 import { errorMessage, isAbort, resumeChat, streamChat, streamReply } from "./providers"
+import { linksToRead, pageSource } from "./routing"
+import { readPage } from "./web"
 import type { Attachment, Conversation, ModelRef, RepoTarget, Reply, Settings, Turn } from "./types"
 
 const SETTINGS_KEY = "personal-ai:settings"
@@ -206,6 +208,7 @@ export function editAndResend(convId: string, turnId: string, text: string) {
     const index = c.turns.findIndex((t) => t.id === turnId)
     if (index < 0) return
     c.turns[index].text = text
+    c.turns[index].linksRead = undefined
     c.turns[index].replies = []
     c.turns.splice(index + 1)
   })
@@ -300,6 +303,8 @@ async function streamOne(convId: string, turnId: string, model: ModelRef) {
   const budget = inputBudget(contextWindow(model.id))
 
   const run = async () => {
+    // Links in the message are read for it first, so the AI answers from the page itself.
+    const unread = await readLinks(convId, snapshot.turns[index], controller.signal)
     // A chat longer than the model can take: condense the oldest turns first, so it remembers them.
     const { dropped } = fitMessages(snapshot.system, history, snapshot.turns[index], model, budget, snapshot.summary)
     let condensed = summaryCovers(snapshot.summary, dropped, history)
@@ -327,9 +332,49 @@ async function streamOne(convId: string, turnId: string, model: ModelRef) {
       },
     })
     const note = condensed ? undefined : "Older messages were left out to fit this model's memory."
-    return { ...result, notice: [note, result.notice].filter(Boolean).join(" ") || undefined }
+    const links = unread.length ? `Couldn't read ${unread.join(", ")}, so it was answered without ${unread.length === 1 ? "that page" : "those pages"}.` : undefined
+    return { ...result, notice: [links, note, result.notice].filter(Boolean).join(" ") || undefined }
   }
   await settle(run(), update, done)
+}
+
+// One read per message, shared by every reply to it (compare mode answers with two models).
+const reading = new Map<string, Promise<string[]>>()
+
+/**
+ * Reads the links in a message (at most two, ones not attached already) and attaches the
+ * pages to it, in the store and in `turn` (the caller's copy). Gives the hosts it couldn't read.
+ */
+function readLinks(convId: string, turn: Turn, signal: AbortSignal) {
+  if (turn.linksRead) return Promise.resolve([])
+  const links = linksToRead(turn.text, turn.attachments.map(pageSource).filter((u): u is string => !!u))
+  if (!links.length) return Promise.resolve([])
+  if (!reading.has(turn.id)) {
+    const task = (async () => {
+      const pages = await Promise.all(
+        links.map((url) =>
+          Promise.race([readPage(url, signal), new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 15_000))]).catch((e) => {
+            if (isAbort(e)) throw e
+            return new URL(url).hostname.replace(/^www\./, "")
+          }),
+        ),
+      )
+      mutate(convId, (c) => {
+        const t = c.turns.find((x) => x.id === turn.id)
+        if (!t) return
+        t.attachments.push(...pages.filter((p): p is Attachment => typeof p !== "string"))
+        t.linksRead = true
+      })
+      return pages.filter((p): p is string => typeof p === "string")
+    })().finally(() => reading.delete(turn.id))
+    reading.set(turn.id, task)
+  }
+  return reading.get(turn.id)!.then((failed) => {
+    // This reply's copy of the turn gets the pages too (each reply works on a snapshot).
+    const stored = conversations.find((c) => c.id === convId)?.turns.find((t) => t.id === turn.id)
+    if (stored) turn.attachments = JSON.parse(JSON.stringify(stored.attachments)) as Attachment[]
+    return failed
+  })
 }
 
 // One summary at a time per chat (compare mode answers with two models at once).

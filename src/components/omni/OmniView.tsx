@@ -26,9 +26,10 @@ import {
   usageSummary,
 } from "../../lib/omni"
 import { makeMusic, makeVideo, omniConfigured, omniModels, omniStatus, omniUsage, readDocument, readPage, resumeOmni, webSearch } from "../../lib/omniapi"
-import { gatewayRoute, isCheaperInference, isThisDevice, siteGateway } from "../../lib/route"
+import { gatewayPreset } from "../../lib/gateways"
+import { gatewayRoute, isThisDevice, siteGateway } from "../../lib/route"
 import { settings, updateSettings } from "../../lib/store"
-import { CheaperInferenceSetup, Segmented } from "../Dialogs"
+import { CheaperInferenceSetup, GatewayPicker, Segmented } from "../Dialogs"
 import { IconCopy, IconDownload, IconFile, IconGlobe, IconHub, IconMenu, IconMusic, IconSearch, IconStop, IconTrash, IconVideo } from "../icons"
 
 type Tab = "setup" | "tools" | "providers"
@@ -243,8 +244,17 @@ function Setup(props: { status: { models: number; version?: string } | { error: 
   const steps = createMemo(() => connectSteps(location.origin))
   return (
     <>
-      <CheaperInferenceSetup />
-      <Show when={!isCheaperInference(settings.omnirouteUrl)}>
+      <GatewayPicker />
+      <Show when={gatewayPreset(settings.omnirouteUrl, settings.gateway).kind === "cheaper"}>
+        <CheaperInferenceSetup />
+      </Show>
+      <Show when={gatewayPreset(settings.omnirouteUrl, settings.gateway).kind === "freellmapi" || gatewayPreset(settings.omnirouteUrl, settings.gateway).kind === "custom"}>
+        <p class="notice small-text">
+          Chat, Code, Design and Cowork use your {gatewayPreset(settings.omnirouteUrl, settings.gateway).label} gateway: add its address and key in Settings → AI. The tools on this
+          page (search, page reading, OCR, music, usage) need OmniRoute.
+        </p>
+      </Show>
+      <Show when={gatewayPreset(settings.omnirouteUrl, settings.gateway).kind === "omniroute"}>
       <section class="ai-box">
         <h3>What OmniRoute is</h3>
         <p class="small-text">

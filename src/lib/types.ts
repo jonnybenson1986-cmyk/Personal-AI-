@@ -1,3 +1,4 @@
+import type { GatewayKind } from "./gateways"
 export interface ModelRef {
   id: string
 }
@@ -54,6 +55,8 @@ export interface Turn {
   tool?: string
   text: string
   attachments: Attachment[]
+  /** The links in the text have been read and attached (see routing.ts). */
+  linksRead?: boolean
   replies: Reply[]
   createdAt: number
 }
@@ -83,6 +86,8 @@ export interface Settings {
   omnirouteUrl: string
   /** An OmniRoute API key (Dashboard → Endpoints). Stored on this device only. */
   omnirouteKey: string
+  /** Which kind of gateway that address is (Settings → AI); unset means OmniRoute. */
+  gateway?: GatewayKind
   /** The user's OpenRouter key. Stored on this device only. */
   openrouterKey: string
   /** Optional GitHub token for private repos. Stored on this device only. */

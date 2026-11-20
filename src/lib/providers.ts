@@ -3,12 +3,14 @@
 // StreamEvents.
 import OpenAI from "openai"
 import { type ChatMessage, fitMessages, inputBudget } from "./history"
-import { filterFreeModels, filterGatewayModels, type GatewayModel, type OpenRouterModel } from "./models"
+import { DEFAULT_MODELS, filterFreeModels, filterGatewayModels, GATEWAY_AUTO, type GatewayModel, modelLabel, type OpenRouterModel } from "./models"
 import { freeFallback } from "../../netlify/shared/proxy.ts"
 import { followJob, JobError, restartEvents, startJob } from "./jobs"
 import { isIOS } from "./install"
 import { AUTO_MODEL } from "./models"
-import { gatewayFor, isCheaperInference, isThisDevice, siteOpenRouter } from "./route"
+import { gatewayPreset, type GatewayKind } from "./gateways"
+import { hasImages, visionModel } from "./routing"
+import { gatewayFor, isThisDevice, siteOpenRouter } from "./route"
 import { findTool } from "./tools"
 import type { Conversation, ModelInfo, ModelRef, Provider, StreamEvents, StreamResult, Turn } from "./types"
 
@@ -17,6 +19,7 @@ export interface Credentials {
   provider?: Provider
   omnirouteUrl?: string
   omnirouteKey?: string
+  gateway?: GatewayKind
   /** Run replies on the server when the caller can pick them up again (default on). */
   background?: boolean
 }
@@ -78,10 +81,18 @@ interface Chunk {
   }[]
 }
 
+// The last model lists loaded, to tell which models can see pictures.
+const listed: Record<Provider, ModelInfo[]> = { openrouter: DEFAULT_MODELS, omniroute: [] }
+
 export async function streamReply(req: StreamRequest): Promise<StreamResult> {
-  return streamChat({
-    messages: fitMessages(req.conversation.system, req.history, req.current, req.model, req.budget ?? inputBudget(), req.conversation.summary).messages,
-    model: req.model,
+  const messages = fitMessages(req.conversation.system, req.history, req.current, req.model, req.budget ?? inputBudget(), req.conversation.summary).messages
+  // A picture sent to a model that can't see would fail ("no endpoints support image input"),
+  // so that message goes to one that can, and the reply says so.
+  const provider = req.credentials.provider ?? "openrouter"
+  const swap = hasImages(messages) ? visionModel(req.model, listed[provider], provider === "omniroute" ? GATEWAY_AUTO : AUTO_MODEL) : undefined
+  const result = await streamChat({
+    messages,
+    model: swap ?? req.model,
     credentials: req.credentials,
     signal: req.signal,
     events: req.events,
@@ -89,6 +100,9 @@ export async function streamReply(req: StreamRequest): Promise<StreamResult> {
     reasoning: !!findTool(req.current.tool)?.reasoning,
     job: req.job,
   })
+  if (!swap) return result
+  const note = `${modelLabel(req.model, listed[provider])} can't see pictures, so ${modelLabel(swap, listed[provider])} answered this one.`
+  return { ...result, notice: [note, result.notice].filter(Boolean).join(" ") }
 }
 
 /** Where a reply can run on the server: OpenRouter, or an OmniRoute gateway the server can reach. */
@@ -226,12 +240,14 @@ export async function listModels(credentials?: Credentials): Promise<ModelInfo[]
   if (credentials?.provider === "omniroute") {
     const page = await client(credentials).models.list()
     lastGatewayModels = page.data as unknown as GatewayModel[]
-    return filterGatewayModels(lastGatewayModels, !isCheaperInference(credentials.omnirouteUrl ?? ""))
+    return (listed.omniroute = filterGatewayModels(lastGatewayModels, gatewayPreset(credentials.omnirouteUrl ?? "", credentials.gateway).routingModes))
   }
   const res = await fetch("/api/openrouter/v1/models")
   if (!res.ok) throw new Error(`Model list failed: ${res.status}`)
   const body = (await res.json()) as { data: OpenRouterModel[] }
-  return filterFreeModels(body.data)
+  const free = filterFreeModels(body.data)
+  if (free.length) listed.openrouter = free
+  return free
 }
 
 /** What the site has set on Netlify: an OpenRouter key, and its own OmniRoute gateway. */

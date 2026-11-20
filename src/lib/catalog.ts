@@ -2,7 +2,8 @@ import { createSignal } from "solid-js"
 import { DEFAULT_MODELS, GATEWAY_AUTO, rememberWindows } from "./models"
 import { ROUTING_MODES } from "./omni"
 import { type Credentials, errorMessage, lastGatewayModels, listModels, serverStatus } from "./providers"
-import { gatewayReady, isCheaperInference, setSiteGateway, setSiteOpenRouter } from "./route"
+import { gatewayPreset } from "./gateways"
+import { gatewayReady, setSiteGateway, setSiteOpenRouter } from "./route"
 import { settings, updateSettings } from "./store"
 import type { ModelInfo } from "./types"
 
@@ -38,18 +39,20 @@ export async function refreshStatus(credentials: Credentials) {
 
 export async function refreshCatalog(credentials?: Credentials) {
   if (credentials?.provider === "omniroute") {
+    // Before (or without) a live list: the gateway's auto model if it has one, else nothing.
+    const fallback = gatewayPreset(credentials.omnirouteUrl ?? "", credentials.gateway).auto ? GATEWAY_FALLBACK : []
     if (!gatewayReady(credentials.omnirouteUrl ?? "", credentials.omnirouteKey ?? "")) {
       setGatewayError(undefined)
-      setCatalog(isCheaperInference(credentials.omnirouteUrl ?? "") ? [] : GATEWAY_FALLBACK)
+      setCatalog(fallback)
       return 0
     }
     try {
       const live = await listModels(credentials)
       setGatewayError(undefined)
       rememberWindows(live)
-      const direct = isCheaperInference(credentials.omnirouteUrl ?? "")
-      setCatalog(live.length ? live : direct ? [] : GATEWAY_FALLBACK)
-      if (direct && live.length && credentials.omnirouteUrl === settings.omnirouteUrl) {
+      setCatalog(live.length ? live : fallback)
+      // A gateway with no auto model needs one of its own models picked.
+      if (!fallback.length && live.length && credentials.omnirouteUrl === settings.omnirouteUrl) {
         const selected = settings.models.filter((m) => live.some((g) => g.id === m.id))
         updateSettings({ models: selected.length ? selected : [{ id: live[0].id }] })
       }
@@ -57,7 +60,7 @@ export async function refreshCatalog(credentials?: Credentials) {
       return live.filter((m) => !ROUTING_MODES.some((r) => r.id === m.id) || lastGatewayModels.some((g) => g.id === m.id)).length
     } catch (e) {
       setGatewayError(errorMessage(e))
-      setCatalog(isCheaperInference(credentials.omnirouteUrl ?? "") ? [] : GATEWAY_FALLBACK)
+      setCatalog(fallback)
       return 0
     }
   }

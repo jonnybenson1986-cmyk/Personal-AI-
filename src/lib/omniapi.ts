@@ -3,7 +3,8 @@
 // requests run as server jobs, so they finish even if the app closes); local ones are called
 // straight from the browser.
 import { followJob, startJob } from "./jobs"
-import { gatewayFor, gatewayReady, isCheaperInference } from "./route"
+import { gatewayPreset } from "./gateways"
+import { gatewayFor, gatewayReady } from "./route"
 import { settings } from "./store"
 import type { StreamEvents } from "./types"
 
@@ -18,6 +19,15 @@ export class OmniError extends Error {
 
 /** Whether OmniRoute can be used: an address and key, or the site's own (it needn't be the chat provider). */
 export const omniConfigured = () => gatewayReady(settings.omnirouteUrl, settings.omnirouteKey)
+
+// Endpoints only OmniRoute itself has; other gateways answer chat and media models only.
+const OMNI_ONLY = /^(\/v1\/(search|web|ocr|music)(\/|$)|\/api\/usage)/
+const preset = () => gatewayPreset(settings.omnirouteUrl, settings.gateway)
+
+function needsOmniRoute(path: string) {
+  if (!preset().omniTools && OMNI_ONLY.test(path))
+    throw new OmniError(`This tool needs OmniRoute. ${preset().label} handles chat and media models, so use Chat, Code, Design, Cowork or its media models instead.`)
+}
 
 function route() {
   const r = gatewayFor(settings.omnirouteUrl)
@@ -41,8 +51,7 @@ async function errorFrom(res: Response) {
 /** A request to OmniRoute, through the site's proxy or straight to a local one. */
 export async function omniFetch(path: string, init: { method?: string; body?: unknown; signal?: AbortSignal } = {}) {
   const r = route()
-  if (isCheaperInference(settings.omnirouteUrl) && /^(\/v1\/(search|web|ocr|music)(\/|$)|\/api\/usage)/.test(path))
-    throw new OmniError("This tool requires OmniRoute. Your direct Cheaper Inference connection supports inference endpoints; use Chat, Code, Design, Cowork or supported media models.")
+  needsOmniRoute(path)
   // The site's own gateway (no base) gets its address and key on the server.
   const headers: Record<string, string> = r.base ? { authorization: `Bearer ${settings.omnirouteKey.trim()}` } : {}
   if (init.body !== undefined) headers["content-type"] = "application/json"
@@ -75,8 +84,7 @@ const quiet: StreamEvents = { text: () => {}, thinking: () => {}, servedBy: () =
  */
 export async function omniRun(path: string, body: Record<string, unknown>, signal?: AbortSignal, onJob?: (id: string) => void): Promise<unknown> {
   const r = route()
-  if (isCheaperInference(settings.omnirouteUrl) && /^(\/v1\/(search|web|ocr|music)(\/|$)|\/api\/usage)/.test(path))
-    throw new OmniError("This tool requires an OmniRoute server and is unavailable through direct Cheaper Inference. Chat and supported media tools use your direct connection.")
+  needsOmniRoute(path)
   if (r.mode === "proxy" && settings.background !== false) {
     const id = await startJob(
       { input: { provider: "omniroute", model: String(body.model ?? ""), messages: [], omnirouteUrl: r.base || undefined, request: { path, body } }, secrets: r.base ? { omnirouteKey: settings.omnirouteKey.trim() } : {} },
@@ -108,7 +116,7 @@ export async function omniModels(kind: string) {
   if (!res) return []
   const body = (await res.json()) as { data?: { id?: string; type?: string }[] }
   return (body.data ?? [])
-    .filter((m) => typeof m.id === "string" && (m.type === kind || (!isCheaperInference(settings.omnirouteUrl) && !m.type)))
+    .filter((m) => typeof m.id === "string" && (m.type === kind || (preset().kind === "omniroute" && !m.type)))
     .map((m) => m.id!)
     .sort()
 }

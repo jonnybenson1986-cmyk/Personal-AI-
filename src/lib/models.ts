@@ -77,13 +77,14 @@ export function filterGatewayModels(list: GatewayModel[], routingModes = true): 
   const models = list
     .filter((m) => typeof m.id === "string" && (!m.type || !NOT_GATEWAY_CHAT.has(m.type)) && (routingModes || !NOT_CHAT.test(m.id)))
     .map((m): ModelInfo => {
-      const vision = m.capabilities?.vision === true || !!m.input_modalities?.includes("image")
+      // Unknown (undefined) when the gateway doesn't say, so pictures aren't rerouted on a guess.
+      const vision = m.capabilities?.vision ?? (m.input_modalities ? m.input_modalities.includes("image") : undefined)
       const context = m.context_length ? `${Math.round(m.context_length / 1000)}K context` : undefined
       const kind = m.owned_by === "combo" ? "Combo" : undefined
       return {
         id: m.id,
         ...(m.context_length ? { context: m.context_length } : {}),
-        label: m.id === GATEWAY_AUTO ? "Auto (OmniRoute picks)" : (m.display_name ?? m.id),
+        label: m.id === GATEWAY_AUTO ? (routingModes ? "Auto (OmniRoute picks)" : "Auto (gateway picks)") : (m.display_name ?? m.id),
         hint: m.id === GATEWAY_AUTO ? "Routes each message across your connected providers" : [kind, vision ? "Sees images" : undefined, context].filter(Boolean).join(" · ") || undefined,
         vision,
       }
