@@ -81,3 +81,24 @@ test("FreeLLMAPI's auto model is labelled for any gateway, not OmniRoute", () =>
   assert.deepEqual(models.map((m) => m.id), ["auto", "gemini-2.5-flash"])
   assert.equal(models[0].label, "Auto (gateway picks)")
 })
+
+test("with the user's own key, every chat model is offered after the free ones, with prices", async () => {
+  const { filterOpenRouterModels } = await import("../src/lib/models.ts")
+  const list = [
+    { id: "openrouter/free", name: "Free Models Router", pricing: { prompt: "0", completion: "0" } },
+    { id: "google/gemma:free", name: "Gemma (free)", pricing: { prompt: "0", completion: "0" } },
+    { id: "anthropic/claude-x", name: "Anthropic: Claude X", pricing: { prompt: "0.000003", completion: "0.000015" }, architecture: { input_modalities: ["text", "image"] } },
+    { id: "openai/gpt-cheap", name: "OpenAI: GPT Cheap", pricing: { prompt: "0.00000015", completion: "0.0000006" } },
+    { id: "openrouter/auto", name: "Auto Router", pricing: { prompt: "-1", completion: "-1" } },
+    { id: "google/lyria:paid", name: "Lyria", pricing: { prompt: "0.0001", completion: "0" }, architecture: { output_modalities: ["audio"] } },
+    { id: "meta/llama-guard", name: "Llama Guard", pricing: { prompt: "0.0000002", completion: "0.0000002" } },
+  ]
+  assert.deepEqual(filterOpenRouterModels(list).map((m) => m.id), ["openrouter/free", "google/gemma:free"])
+  const all = filterOpenRouterModels(list, true)
+  assert.deepEqual(all.map((m) => m.id), ["openrouter/free", "google/gemma:free", "anthropic/claude-x", "openai/gpt-cheap"])
+  assert.equal(all[2].paid, true)
+  assert.equal(all[2].vision, true)
+  assert.equal(all[2].hint, "$3 in / $15 out per M tokens · Sees images")
+  assert.equal(all[3].hint, "$0.15 in / $0.6 out per M tokens")
+  assert.equal(all[1].paid, undefined)
+})

@@ -200,7 +200,7 @@ export function SettingsDialog(props: { onClose: () => void }) {
         <Segmented<Provider>
           value={settings.provider}
           options={[
-            { value: "openrouter", label: "OpenRouter (free)" },
+            { value: "openrouter", label: "OpenRouter" },
             { value: "omniroute", label: "Your gateway" },
           ]}
           onChange={(provider) => {
@@ -215,11 +215,12 @@ export function SettingsDialog(props: { onClose: () => void }) {
         fallback={
           <>
             <p class="muted small-text">
-              Free open models (Gemma, Nemotron, MiniMax and more) through OpenRouter. A free OpenRouter key is all it needs.
+              Free open models (Gemma, Nemotron, MiniMax and more) work with no setup. Add your own OpenRouter key to also use every other
+              model (GPT, Claude, Gemini, Grok and hundreds more): those are billed to your OpenRouter account, the free ones stay free.
             </p>
             <KeyField
               label="OpenRouter key"
-              hint="Free: sign up at openrouter.ai, then Settings → API Keys → Create. No card needed. Saved only on this device."
+              hint="openrouter.ai → Settings → API Keys → Create. Free models need no card; for paid ones add credit at openrouter.ai → Credits. Saved only on this device."
               placeholder="sk-or-…"
               value={settings.openrouterKey}
               onSave={(openrouterKey) => save({ openrouterKey })}

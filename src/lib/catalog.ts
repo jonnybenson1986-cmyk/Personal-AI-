@@ -64,8 +64,13 @@ export async function refreshCatalog(credentials?: Credentials) {
       return 0
     }
   }
-  const live = await listModels().catch(() => [] as ModelInfo[])
+  const live = await listModels(credentials).catch(() => [] as ModelInfo[])
   rememberWindows(live)
   setCatalog(live.length ? live : DEFAULT_MODELS)
+  // A paid model chosen with a key that's since been removed can't be used on the site's key.
+  if (live.length && settings.provider !== "omniroute" && (!credentials || credentials.openrouterKey === settings.openrouterKey)) {
+    const kept = settings.models.filter((m) => live.some((x) => x.id === m.id))
+    if (kept.length !== settings.models.length) updateSettings({ models: kept.length ? kept : [{ id: live[0].id }] })
+  }
   return live.length
 }

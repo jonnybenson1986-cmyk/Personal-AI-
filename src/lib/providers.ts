@@ -3,7 +3,7 @@
 // StreamEvents.
 import OpenAI from "openai"
 import { type ChatMessage, fitMessages, inputBudget } from "./history"
-import { DEFAULT_MODELS, filterFreeModels, filterGatewayModels, GATEWAY_AUTO, type GatewayModel, modelLabel, type OpenRouterModel } from "./models"
+import { DEFAULT_MODELS, filterGatewayModels, filterOpenRouterModels, GATEWAY_AUTO, type GatewayModel, modelLabel, type OpenRouterModel } from "./models"
 import { freeFallback } from "../../netlify/shared/proxy.ts"
 import { followJob, JobError, restartEvents, startJob } from "./jobs"
 import { isIOS } from "./install"
@@ -235,7 +235,13 @@ export function resumeChat(id: string, credentials: Credentials, events: StreamE
 /** OmniRoute's full model list (including image and audio models) from the last load. */
 export let lastGatewayModels: GatewayModel[] = []
 
-/** Free chat models from OpenRouter's live list (needs no key), or the gateway's models. */
+/** Whether these are the user's own OpenRouter key, which can pay for any model. */
+export const ownOpenRouterKey = (c?: Credentials) => !!c?.openrouterKey?.trim().startsWith("sk-or-")
+
+/**
+ * OpenRouter's chat models from its live list (needs no key): the free ones, and every other
+ * one too with the user's own key. Or the gateway's models.
+ */
 export async function listModels(credentials?: Credentials): Promise<ModelInfo[]> {
   if (credentials?.provider === "omniroute") {
     const page = await client(credentials).models.list()
@@ -245,9 +251,9 @@ export async function listModels(credentials?: Credentials): Promise<ModelInfo[]
   const res = await fetch("/api/openrouter/v1/models")
   if (!res.ok) throw new Error(`Model list failed: ${res.status}`)
   const body = (await res.json()) as { data: OpenRouterModel[] }
-  const free = filterFreeModels(body.data)
-  if (free.length) listed.openrouter = free
-  return free
+  const models = filterOpenRouterModels(body.data, ownOpenRouterKey(credentials))
+  if (models.length) listed.openrouter = models
+  return models
 }
 
 /** What the site has set on Netlify: an OpenRouter key, and its own OmniRoute gateway. */

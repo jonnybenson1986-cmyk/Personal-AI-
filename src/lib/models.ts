@@ -29,31 +29,63 @@ export interface OpenRouterModel {
   name?: string
   context_length?: number | null
   pricing?: { prompt?: string; completion?: string }
-  architecture?: { input_modalities?: string[] }
+  architecture?: { input_modalities?: string[]; output_modalities?: string[] }
 }
 
 // Classifiers and guard models aren't chat assistants.
 const NOT_CHAT = /(safety|guard|moderation|embed|rerank)/i
 
-/** The free chat models from OpenRouter's model list, Auto first. */
-export function filterFreeModels(list: OpenRouterModel[]): ModelInfo[] {
-  const free = list
-    .filter((m) => m.id.endsWith(":free") && m.pricing?.prompt === "0" && m.pricing?.completion === "0")
-    .filter((m) => !NOT_CHAT.test(m.id) && (m.architecture?.input_modalities ?? ["text"]).includes("text"))
-    .map((m): ModelInfo => {
-      const vision = !!m.architecture?.input_modalities?.includes("image")
-      const context = m.context_length ? `${Math.round(m.context_length / 1000)}K context` : undefined
-      return {
-        id: m.id,
-        ...(m.context_length ? { context: m.context_length } : {}),
-        label: (m.name ?? m.id).replace(/\s*\(free\)\s*$/i, "").replace(/:\s+/, " ").replace(/\s+/g, " "),
-        hint: [vision ? "Sees images" : undefined, context].filter(Boolean).join(" · ") || undefined,
-        vision,
-      }
-    })
-    .sort((a, b) => a.label.localeCompare(b.label))
-  return free.length ? [DEFAULT_MODELS[0], ...free] : []
+const isFree = (m: OpenRouterModel) => m.id.endsWith(":free") && m.pricing?.prompt === "0" && m.pricing?.completion === "0"
+
+/** Dollars per million tokens, from OpenRouter's per-token price; undefined if not a real price. */
+function perMillion(price?: string) {
+  const n = Number(price)
+  if (price === undefined || !Number.isFinite(n) || n < 0) return undefined
+  const m = n * 1e6
+  return m >= 10 ? `$${Math.round(m)}` : `$${Number(m.toPrecision(2))}`
 }
+
+/**
+ * The chat models from OpenRouter's model list: Auto first, then the free ones. With `paid`
+ * (the user's own key, which pays for them) every other chat model follows, with its price.
+ */
+export function filterOpenRouterModels(list: OpenRouterModel[], paid = false): ModelInfo[] {
+  const chat = list.filter(
+    (m) =>
+      !NOT_CHAT.test(m.id) &&
+      (m.architecture?.input_modalities ?? ["text"]).includes("text") &&
+      (m.architecture?.output_modalities ?? ["text"]).includes("text"),
+  )
+  const info = (m: OpenRouterModel, price?: string): ModelInfo => {
+    const vision = !!m.architecture?.input_modalities?.includes("image")
+    const context = m.context_length ? `${Math.round(m.context_length / 1000)}K context` : undefined
+    return {
+      id: m.id,
+      ...(m.context_length ? { context: m.context_length } : {}),
+      label: (m.name ?? m.id).replace(/\s*\(free\)\s*$/i, "").replace(/:\s+/, " ").replace(/\s+/g, " "),
+      hint: [price, vision ? "Sees images" : undefined, context].filter(Boolean).join(" · ") || undefined,
+      vision,
+      ...(price ? { paid: true } : {}),
+    }
+  }
+  const byLabel = (a: ModelInfo, b: ModelInfo) => a.label.localeCompare(b.label)
+  const free = chat.filter(isFree).map((m) => info(m)).sort(byLabel)
+  if (!free.length) return []
+  const others = paid
+    ? chat
+        .filter((m) => !isFree(m) && m.id !== AUTO_MODEL)
+        .flatMap((m) => {
+          const input = perMillion(m.pricing?.prompt)
+          const output = perMillion(m.pricing?.completion)
+          return input && output ? [info(m, `${input} in / ${output} out per M tokens`)] : []
+        })
+        .sort(byLabel)
+    : []
+  return [DEFAULT_MODELS[0], ...free, ...others]
+}
+
+/** The free chat models from OpenRouter's model list, Auto first. */
+export const filterFreeModels = (list: OpenRouterModel[]) => filterOpenRouterModels(list)
 
 /** OmniRoute's own router: picks a model from your connected providers for each request. */
 export const GATEWAY_AUTO = "auto"

@@ -10,6 +10,8 @@ export interface ModelInfo extends ModelRef {
   vision?: boolean
   /** Context window in tokens, when the provider says. */
   context?: number
+  /** Billed per message (only offered with the user's own OpenRouter key). */
+  paid?: boolean
 }
 
 export interface Attachment {
