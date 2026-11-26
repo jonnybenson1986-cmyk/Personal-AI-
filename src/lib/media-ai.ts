@@ -1,6 +1,7 @@
 // AI image and audio features, all through OpenRouter (the AI behind the site). Creating and
 // editing images and AI voices use OpenRouter's paid image and audio models, so they need paid
-// models unlocked (the passcode, or your own key with credit). Transcription has a free model.
+// models unlocked (the passcode, or your own key with credit). Transcription has a free model,
+// but OpenRouter only takes audio from accounts with at least $0.50 of credit.
 // Describing a photo and turning plain-English instructions into edits work with any chat model.
 import type OpenAI from "openai"
 import { imageFrom, mediaModelsFrom, pcmToWav } from "./mediaops.ts"
