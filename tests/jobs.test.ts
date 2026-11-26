@@ -52,32 +52,12 @@ test("the site's key is only used for free models; a user key goes straight thro
   assert.deepEqual(mine, { url: "https://openrouter.ai/api/v1/chat/completions", key: "sk-or-mine", extra: { reasoning: { effort: "high" } } })
 })
 
-test("OmniRoute jobs need a public https address and the user's key", () => {
-  const omni = { ...input, provider: "omniroute" as const }
-  assert.equal((upstreamFor({ ...omni, omnirouteUrl: "http://localhost:20128" }, { omnirouteKey: "k" }, env({})) as { code: number }).code, 400)
-  assert.equal((upstreamFor({ ...omni, omnirouteUrl: "https://omni.example.com" }, {}, env({})) as { code: number }).code, 401)
-  assert.deepEqual(upstreamFor({ ...omni, omnirouteUrl: "https://omni.example.com/v1", reasoning: true }, { omnirouteKey: "k" }, env({})), {
-    url: "https://omni.example.com/v1/chat/completions",
-    key: "k",
-    extra: { reasoning_effort: "high" },
-  })
-})
-
-test("OmniRoute jobs without an address use the site's gateway and key", () => {
-  const omni = { ...input, provider: "omniroute" as const }
-  const site = env({ OMNIROUTE_URL: "https://omni.example.com", OMNIROUTE_API_KEY: "sk-omni-site" })
-  assert.deepEqual(upstreamFor(omni, {}, site), { url: "https://omni.example.com/v1/chat/completions", key: "sk-omni-site", extra: {} })
-  assert.equal((upstreamFor(omni, {}, env({})) as { code: number }).code, 400)
-  // An address from the app always goes with the app's key, never the site's.
-  assert.equal((upstreamFor({ ...omni, omnirouteUrl: "https://other.example.com" }, {}, site) as { code: number }).code, 401)
-})
-
 test("starting a job saves the request without the key and starts the background function", async () => {
   const { store, data } = memoryStore()
   const { res, json, starts } = await api(store, "POST", "/api/jobs", { input, secrets: { openrouterKey: "sk-or-mine" } })
   assert.equal(res.status, 201)
   assert.ok(validJobId(json.id))
-  assert.deepEqual(data.get(`input/${json.id}`), { ...input, reasoning: false, omnirouteUrl: undefined })
+  assert.deepEqual(data.get(`input/${json.id}`), { ...input, reasoning: false })
   assert.equal((data.get(`job/${json.id}`) as JobRecord).status, "queued")
   assert.ok(![...data.values()].some((v) => JSON.stringify(v).includes("sk-or-mine")))
   assert.deepEqual(JSON.parse(starts[0]), { id: json.id, secrets: { openrouterKey: "sk-or-mine" } })
@@ -220,38 +200,6 @@ test("old jobs are cleaned up, recent ones kept", async () => {
   assert.deepEqual([...data.keys()], [`job/${fresh}`])
 })
 
-test("slow OmniRoute requests run as jobs and keep their JSON answer", async () => {
-  const { store, data } = memoryStore()
-  const omni = { provider: "omniroute", model: "runway/gen-3", messages: [], omnirouteUrl: "https://omni.example.com", request: { path: "/v1/videos/generations", body: { model: "runway/gen-3", prompt: "waves" } } }
-  // Only the known slow endpoints, and only for OmniRoute.
-  assert.equal((await api(store, "POST", "/api/jobs", { input: { ...omni, request: { path: "/api/keys", body: {} } }, secrets: { omnirouteKey: "k" } })).res.status, 400)
-  assert.equal((await api(store, "POST", "/api/jobs", { input: { ...omni, provider: "openrouter" }, secrets: { openrouterKey: "sk-or-x" } })).res.status, 400)
-  const { json } = await api(store, "POST", "/api/jobs", { input: omni, secrets: { omnirouteKey: "k" } })
-  const calls: { url: string; init: RequestInit }[] = []
-  globalThis.fetch = (async (url: string, init: RequestInit) => {
-    calls.push({ url, init })
-    return new Response(JSON.stringify({ created: 1, data: [{ url: "https://cdn/v.mp4", format: "mp4" }] }), { headers: { "content-type": "application/json", "x-omniroute-decision": "strategy=single; provider=runway; latency_ms=90000" } })
-  }) as typeof fetch
-  await runJob(json.id, { omnirouteKey: "k" }, { store, env: env({}) })
-  const job = data.get(`job/${json.id}`) as JobRecord
-  assert.equal(job.status, "done")
-  assert.deepEqual(job.result, { created: 1, data: [{ url: "https://cdn/v.mp4", format: "mp4" }] })
-  assert.equal(job.route, "strategy=single; provider=runway; latency_ms=90000")
-  assert.equal(calls[0].url, "https://omni.example.com/v1/videos/generations")
-  assert.deepEqual(JSON.parse(String(calls[0].init.body)), { model: "runway/gen-3", prompt: "waves" })
-  assert.equal(new Headers(calls[0].init.headers).get("authorization"), "Bearer k")
-})
-
-test("chat jobs keep OmniRoute's routing decision", async () => {
-  const { store, data } = memoryStore()
-  const { json } = await api(store, "POST", "/api/jobs", { input: { provider: "omniroute", model: "auto", messages: [{ role: "user", content: "hi" }], omnirouteUrl: "https://omni.example.com" }, secrets: { omnirouteKey: "k" } })
-  globalThis.fetch = (async () => new Response(sse(chunk("Hi")), { headers: { "x-omniroute-decision": "strategy=auto; provider=groq; latency_ms=300" } })) as unknown as typeof fetch
-  await runJob(json.id, { omnirouteKey: "k" }, { store, env: env({}) })
-  const job = data.get(`job/${json.id}`) as JobRecord
-  assert.equal(job.text, "Hi")
-  assert.equal(job.route, "strategy=auto; provider=groq; latency_ms=300")
-})
-
 test("a team job runs each agent in order, passing on the reports, and keeps them all", async () => {
   const { store, data } = memoryStore()
   const team = { task: "Plan a launch", members: [{ name: "Researcher", brief: "You research." }, { name: "Writer", brief: "You write." }] }
@@ -303,14 +251,6 @@ test("bad teams are refused before a job starts", async () => {
   const bad = await api(store, "POST", "/api/jobs", { input: { provider: "openrouter", model: "openrouter/free", messages: [], team: { task: "x", members: [] } }, secrets: { openrouterKey: "sk-or-x" } })
   assert.equal(bad.res.status, 400)
   assert.match(bad.json.error.message, /1 to 6 agents/)
-})
-
-test("OmniRoute's keepalive chunks don't count as the model that answered", async () => {
-  const { store, data } = memoryStore()
-  const { json } = await api(store, "POST", "/api/jobs", { input: { provider: "openrouter", model: "openrouter/free", messages: [{ role: "user", content: "hi" }] }, secrets: { openrouterKey: "sk-or-mine" } })
-  globalThis.fetch = (async () => new Response(sse({ model: "keepalive", choices: [{ delta: {} }] }, chunk("Hi")))) as unknown as typeof fetch
-  await runJob(json.id, { openrouterKey: "sk-or-mine" }, { store, env: env({}) })
-  assert.equal((data.get(`job/${json.id}`) as JobRecord).servedBy, "google/gemma:free")
 })
 
 test("a busy provider is tried once more before the job fails, after its Retry-After", async () => {

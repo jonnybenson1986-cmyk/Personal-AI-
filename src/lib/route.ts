@@ -1,49 +1,7 @@
-// How the app reaches the user's OmniRoute gateway, from the address they entered, or the
-// site's own gateway (OMNIROUTE_URL and OMNIROUTE_API_KEY on Netlify) when none is entered.
+// What the site has set up on Netlify, from /api/status.
 import { createSignal } from "solid-js"
 
-/** Whether the site has its own OmniRoute gateway on Netlify (from /api/status). */
-export const [siteGateway, setSiteGateway] = createSignal(false)
-/** Whether the site has its own OpenRouter key (OPENROUTER_API_KEY), so the free AI works with none in the app. */
+/** Whether the site has its own OpenRouter key (OPENROUTER_API_KEY), so the AI works with none in the app. */
 export const [siteOpenRouter, setSiteOpenRouter] = createSignal(false)
 /** Whether the site has a passcode (PAID_PASSCODE) that unlocks paid models on its key. */
 export const [sitePasscode, setSitePasscode] = createSignal(false)
-
-/** An address that means "this device itself" (localhost), which a phone can't be running OmniRoute on. */
-export function isThisDevice(raw: string) {
-  const r = gatewayRoute(raw)
-  if (!r || r.mode !== "direct") return false
-  return /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1\])$/i.test(new URL(r.base).hostname)
-}
-
-const PRIVATE_HOST = /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|\[::1\]|.+\.(local|lan|home|internal))$/i
-
-/**
- * Where an OmniRoute address is reached from: "proxy" (public https, through this site's
- * server) or "direct" (localhost or a home network, from the browser itself).
- */
-export function gatewayRoute(raw: string): { mode: "proxy" | "direct"; base: string } | undefined {
-  const text = raw.trim()
-  if (!text) return undefined
-  let url: URL
-  try {
-    url = new URL(/^https?:\/\//i.test(text) ? text : `${/^(localhost|127\.|\d+\.\d+\.\d+\.\d+)/.test(text) ? "http" : "https"}://${text}`)
-  } catch {
-    return undefined
-  }
-  const base = (url.origin + url.pathname).replace(/\/+$/, "").replace(/\/v1$/, "")
-  return { mode: url.protocol === "https:" && !PRIVATE_HOST.test(url.hostname) ? "proxy" : "direct", base }
-}
-
-/**
- * The gateway to use: the address entered in the app, or else the site's own. The site's has
- * no base here: the proxy fills in its address and key, which never reach the browser.
- */
-export function gatewayFor(raw: string): { mode: "proxy" | "direct"; base: string } | undefined {
-  if (raw.trim()) return gatewayRoute(raw)
-  return siteGateway() ? { mode: "proxy", base: "" } : undefined
-}
-
-/** Whether OmniRoute can be used: an address and key in the app, or the site's own gateway. */
-export const gatewayReady = (raw: string, key: string) => (raw.trim() ? !!gatewayRoute(raw) && !!key.trim() : siteGateway())
-

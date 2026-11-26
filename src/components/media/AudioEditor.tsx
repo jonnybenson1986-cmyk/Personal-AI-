@@ -19,7 +19,9 @@ import {
   waveform,
 } from "../../lib/audioops"
 import { download } from "../../lib/canvas"
-import { hasGateway, mediaModels, speak, transcribe } from "../../lib/media-ai"
+import { mediaModels, speak, transcribe, VOICES } from "../../lib/media-ai"
+import { paidModels } from "../../lib/providers"
+import { settings } from "../../lib/store"
 import { errorMessage } from "../../lib/providers"
 import { IconMenu, IconMic, IconPause, IconPlay, IconRedo, IconScissors, IconUndo } from "../icons"
 
@@ -52,7 +54,8 @@ export default function AudioEditor(props: { onMenu: () => void }) {
   const [transcript, setTranscript] = createSignal<string>()
   const [ttsText, setTtsText] = createSignal("")
   const [voice, setVoice] = createSignal("alloy")
-  const [models] = createResource(() => hasGateway() || undefined, () => mediaModels())
+  // Reloads when paid models are unlocked or locked on this device.
+  const [models] = createResource(() => String(paidModels(settings)), () => mediaModels())
   const [ttsModel, setTtsModel] = createSignal("")
   const [sttModel, setSttModel] = createSignal("")
   let canvas!: HTMLCanvasElement
@@ -63,8 +66,8 @@ export default function AudioEditor(props: { onMenu: () => void }) {
 
   createEffect(() => {
     const m = models()
-    if (m && !ttsModel()) setTtsModel(m.speech[0] ?? "")
-    if (m && !sttModel()) setSttModel(m.transcription[0] ?? "")
+    if (m && !m.speech.includes(ttsModel())) setTtsModel(m.speech[0] ?? "")
+    if (m && !m.transcription.includes(sttModel())) setSttModel(m.transcription[0] ?? "")
   })
 
   onMount(async () => {
@@ -423,11 +426,7 @@ export default function AudioEditor(props: { onMenu: () => void }) {
         </Show>
         <section class="ai-box">
           <h3>AI audio</h3>
-          <Show
-            when={hasGateway()}
-            fallback={<p class="muted small-text">Transcription and AI voices use your OmniRoute gateway. Choose it in Settings → AI provider, with speech models connected there.</p>}
-          >
-            <Show when={models()} fallback={<p class="muted small-text">Loading OmniRoute's audio models…</p>}>
+          <Show when={models()} fallback={<p class="muted small-text">Loading audio models…</p>}>
               {(m) => (
                 <>
                   <div class="ai-row">
@@ -448,15 +447,19 @@ export default function AudioEditor(props: { onMenu: () => void }) {
                       </button>
                     </div>
                   </Show>
+                  <Show
+                    when={m().speech.length}
+                    fallback={<p class="muted small-text">AI voices use OpenRouter's voice models, which are paid. Unlock paid models in Settings → AI (passcode), with credit on the OpenRouter account.</p>}
+                  >
                   <textarea class="text-input" rows={3} placeholder="Type something for an AI voice to say…" value={ttsText()} onInput={(e) => setTtsText(e.currentTarget.value)} />
                   <div class="ai-row">
                     <select class="text-input" value={ttsModel()} onChange={(e) => setTtsModel(e.currentTarget.value)} aria-label="Voice model">
-                      <For each={m().speech} fallback={<option value="">No speech models</option>}>
+                      <For each={m().speech}>
                         {(id) => <option value={id}>{id}</option>}
                       </For>
                     </select>
                     <select class="text-input voice-select" value={voice()} onChange={(e) => setVoice(e.currentTarget.value)} aria-label="Voice">
-                      <For each={["alloy", "ash", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer"]}>{(v) => <option value={v}>{v}</option>}</For>
+                      <For each={VOICES}>{(v) => <option value={v}>{v}</option>}</For>
                     </select>
                   </div>
                   <div class="ai-row">
@@ -469,9 +472,9 @@ export default function AudioEditor(props: { onMenu: () => void }) {
                       </button>
                     </Show>
                   </div>
+                  </Show>
                 </>
               )}
-            </Show>
           </Show>
           <Show when={busy()}>
             <p class="small-text shimmer">{busy()}</p>

@@ -5,7 +5,6 @@ import { type AgentInfo, searchAgents, TEAMS, toolNotes } from "../../lib/agents
 import { download } from "../../lib/canvas"
 import { parseFileChanges } from "../../lib/changes"
 import { renderMarkdown } from "../../lib/markdown"
-import { omniConfigured } from "../../lib/omniapi"
 import { chatWith } from "../../lib/store"
 import { setView } from "../../lib/view"
 import { Modal } from "../Dialogs"
@@ -194,11 +193,10 @@ function AgentSheet(props: { agent: AgentInfo; division?: string; inTeam: boolea
 function AssignTray(props: { team: AgentInfo[]; onRemove: (a: AgentInfo) => void; onAssigned: () => void }) {
   const [task, setTask] = createSignal("")
   const [cowork, setCowork] = createSignal(false)
-  const [search, setSearch] = createSignal(false)
   const go = () => {
     const text = task().trim()
     if (!text) return
-    void assign(text, props.team, { cowork: cowork(), search: search() && omniConfigured() })
+    void assign(text, props.team, { cowork: cowork() })
     setTask("")
     props.onAssigned()
   }
@@ -227,9 +225,6 @@ function AssignTray(props: { team: AgentInfo[]; onRemove: (a: AgentInfo) => void
       <div class="ai-row">
         <label class="small-text">
           <input type="checkbox" checked={cowork()} onChange={(e) => setCowork(e.currentTarget.checked)} /> Include Cowork files
-        </label>
-        <label class="small-text" title={omniConfigured() ? "" : "Needs OmniRoute with a search provider (Omni screen)"}>
-          <input type="checkbox" checked={search()} disabled={!omniConfigured()} onChange={(e) => setSearch(e.currentTarget.checked)} /> Search the web first
         </label>
         <span class="spacer" />
         <button class="button primary" disabled={!task().trim()} onClick={go}>

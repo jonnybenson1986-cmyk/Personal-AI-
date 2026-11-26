@@ -50,8 +50,8 @@ async function runJob(input: unknown) {
 
 await check("Status", async () => {
   const s = await getJson("/api/status")
-  if (!s.serverKey && !s.omniroute) throw new Error("the site has no OPENROUTER_API_KEY (or OmniRoute) set")
-  return `OpenRouter key: ${s.serverKey ? "yes" : "no"}, site OmniRoute: ${s.omniroute ? "yes" : "no"}`
+  if (!s.serverKey) throw new Error("the site has no OPENROUTER_API_KEY set")
+  return `OpenRouter key: ${s.serverKey ? "yes" : "no"}, passcode: ${s.passcode ? "set" : "not set"}`
 })
 
 await check("Free models", async () => {

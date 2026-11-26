@@ -1,4 +1,3 @@
-import type { GatewayKind } from "./gateways"
 export interface ModelRef {
   id: string
 }
@@ -35,8 +34,6 @@ export interface Reply {
   error?: string
   /** The server job generating this reply, so it can be picked up again after the app closes. */
   job?: string
-  /** How OmniRoute routed it, e.g. "strategy=auto; provider=groq; latency_ms=812". */
-  route?: string
   /** Set once this reply's file changes were pushed to GitHub. */
   pushed?: { commitUrl: string; branchUrl: string; branch: string; pullRequestUrl?: string }
   createdAt: number
@@ -79,17 +76,8 @@ export interface Conversation {
   updatedAt: number
 }
 
-export type Provider = "openrouter" | "omniroute"
 
 export interface Settings {
-  /** Where chats go: OpenRouter's free models, or the user's own OmniRoute gateway. */
-  provider: Provider
-  /** OmniRoute's address, e.g. https://abc.trycloudflare.com or http://localhost:20128. */
-  omnirouteUrl: string
-  /** An OmniRoute API key (Dashboard → Endpoints). Stored on this device only. */
-  omnirouteKey: string
-  /** Which kind of gateway that address is (Settings → AI); unset means OmniRoute. */
-  gateway?: GatewayKind
   /** This device's pass for paid models on the site's own key, from the owner's passcode. */
   sitePass?: string
   /** The user's OpenRouter key. Stored on this device only. */
@@ -114,8 +102,4 @@ export interface StreamEvents {
 export interface StreamResult {
   /** Set when the reply ended early; shown under it. */
   notice?: string
-  /** OmniRoute's routing decision for the reply (X-OmniRoute-Decision). */
-  route?: string
-  /** The JSON answer of a non-chat OmniRoute job. */
-  result?: unknown
 }

@@ -16,15 +16,13 @@ export class JobError extends Error {
 
 export interface JobStart {
   input: {
-    provider: "openrouter" | "omniroute"
+    provider: "openrouter"
     model: string
     messages: unknown[]
     reasoning?: boolean
-    omnirouteUrl?: string
-    request?: { path: string; body: unknown }
     team?: { task: string; members: TeamMember[] }
   }
-  secrets: { openrouterKey?: string; omnirouteKey?: string; sitePass?: string }
+  secrets: { openrouterKey?: string; sitePass?: string }
 }
 
 /** Where jobs are started: its own address, so the site can rate-limit starts per visitor. */
@@ -166,7 +164,7 @@ export async function followJob(id: string, events: StreamEvents, signal: AbortS
       thinking = p.thinkingLength
       if (p.status === "done") {
         forget()
-        return { notice: p.notice, route: p.route, result: p.result }
+        return { notice: p.notice }
       }
       if (p.status === "error") {
         forget()

@@ -1,8 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { hasImages, linksToRead, pageSource, visionModel } from "../src/lib/routing.ts"
-import { GATEWAYS, gatewayKind, gatewayPreset } from "../src/lib/gateways.ts"
-import { filterGatewayModels } from "../src/lib/models.ts"
 
 test("links in a message are found, tidied and capped", () => {
   assert.deepEqual(linksToRead("Summarize https://example.com/a. Also see (https://en.wikipedia.org/wiki/Foo_(bar)), thanks!"), [
@@ -48,38 +46,6 @@ test("the chosen model is kept when it sees, or when we can't tell", () => {
   assert.equal(visionModel({ id: "not-listed" }, known, "openrouter/free"), undefined)
   // Nothing in the list is known to see: no better choice, so keep it.
   assert.equal(visionModel({ id: "text-only:free" }, [known[1]], "openrouter/free"), undefined)
-})
-
-test("a gateway that doesn't report vision leaves it unknown", () => {
-  const models = filterGatewayModels([{ id: "a" }, { id: "b", input_modalities: ["text"] }, { id: "c", capabilities: { vision: true } }], false)
-  assert.deepEqual(
-    models.map((m) => [m.id, m.vision]),
-    [
-      ["a", undefined],
-      ["b", false],
-      ["c", true],
-    ],
-  )
-})
-
-test("gateway presets: Cheaper Inference by address, the rest as picked, OmniRoute by default", () => {
-  assert.equal(gatewayKind("https://api.cheaperinference.com/v1"), "cheaper")
-  assert.equal(gatewayKind("https://api.cheaperinference.com/v1", "omniroute"), "cheaper")
-  assert.equal(gatewayKind("http://localhost:3001", "freellmapi"), "freellmapi")
-  assert.equal(gatewayKind("https://my-tunnel.trycloudflare.com"), "omniroute")
-  assert.equal(gatewayKind(""), "omniroute")
-  // Picked Cheaper Inference but then typed another address: treat it as a generic gateway.
-  assert.equal(gatewayKind("https://other.example.com", "cheaper"), "custom")
-  assert.equal(gatewayPreset("", "freellmapi").omniTools, false)
-  assert.equal(GATEWAYS.omniroute.routingModes, true)
-  assert.equal(GATEWAYS.freellmapi.auto, true)
-  assert.equal(GATEWAYS.cheaper.auto, false)
-})
-
-test("FreeLLMAPI's auto model is labelled for any gateway, not OmniRoute", () => {
-  const models = filterGatewayModels([{ id: "auto" }, { id: "gemini-2.5-flash" }], GATEWAYS.freellmapi.routingModes)
-  assert.deepEqual(models.map((m) => m.id), ["auto", "gemini-2.5-flash"])
-  assert.equal(models[0].label, "Auto (gateway picks)")
 })
 
 test("with the user's own key, every chat model is offered after the free ones, with prices", async () => {

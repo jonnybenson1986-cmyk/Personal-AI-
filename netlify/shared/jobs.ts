@@ -1,14 +1,12 @@
-import { inferenceFetch } from "./inference.ts"
 // Background AI jobs: a reply is generated on the server, so it keeps going when the app is
 // closed or the phone locks. The app posts the request to /api/jobs (an edge function), which
 // saves it and starts the run-job background function (up to 15 minutes). That function
-// streams from OpenRouter or OmniRoute and saves the text as it arrives. The app reads the
+// streams from OpenRouter and saves the text as it arrives. The app reads the
 // progress back, and picks the reply up again when it's opened later.
 //
 // Keys are never stored: they travel with the start request only. The request itself is
 // deleted as soon as the job starts, and finished jobs are deleted once the app has them (or
 // after a day).
-import { gatewayBase, siteGateway } from "./gateway.ts"
 import { freeFallback, isFreeModel, json, PLACEHOLDER_KEY } from "./proxy.ts"
 import { purgeLimits } from "./limit.ts"
 import { paidUnlocked } from "./passcode.ts"
@@ -22,14 +20,10 @@ export interface JobStore {
 }
 
 export interface JobInput {
-  provider: "openrouter" | "omniroute"
+  provider: "openrouter"
   model: string
   messages: unknown[]
   reasoning?: boolean
-  /** Public https address of the user's OmniRoute gateway; without one, the site's own (OMNIROUTE_URL). */
-  omnirouteUrl?: string
-  /** An OmniRoute request other than chat (video, music, OCR…), whose JSON answer is kept whole. */
-  request?: { path: string; body: unknown }
   /** Agents working on a task in order, each reporting back (see team.ts). */
   team?: { task: string; members: TeamMember[] }
 }
@@ -45,12 +39,8 @@ export interface StepRecord {
   error?: string
 }
 
-/** The slow OmniRoute endpoints that may run as jobs. */
-export const OMNI_JOB_PATH = /^\/v1\/(videos\/generations|music\/generations|images\/generations|ocr|search|web\/fetch)$/
-
 export interface JobSecrets {
   openrouterKey?: string
-  omnirouteKey?: string
   /** This device's pass for paid models on the site's key (passcode.ts). */
   sitePass?: string
 }
@@ -64,10 +54,6 @@ export interface JobRecord {
   error?: string
   /** HTTP status of a failed upstream request, so the app can explain it. */
   code?: number
-  /** OmniRoute's routing decision (its X-OmniRoute-Decision header). */
-  route?: string
-  /** The JSON answer of a non-chat request. */
-  result?: unknown
   /** Each agent's report, for a team job. */
   steps?: StepRecord[]
   updated: number
@@ -94,16 +80,6 @@ const userOpenRouterKey = (k?: string) => (k && k !== PLACEHOLDER_KEY && k.start
 
 /** Where a job's request goes and with which key, or why it can't run. */
 export function upstreamFor(input: JobInput, secrets: JobSecrets, env: (name: string) => string | undefined, openrouterOrigin = OPENROUTER_ORIGIN) {
-  if (input.provider === "omniroute") {
-    // No address from the app means the site's own gateway, with the site's key.
-    const site = input.omnirouteUrl ? undefined : siteGateway(env)
-    const base = site?.base ?? gatewayBase(input.omnirouteUrl ?? null)
-    if (!base) return { error: "Background replies need a public https:// OmniRoute address.", code: 400 }
-    const key = site?.key ?? secrets.omnirouteKey
-    if (!key) return { error: "Add your OmniRoute API key in Settings.", code: 401 }
-    if (input.request) return { url: base + input.request.path, key, extra: {} }
-    return { url: `${base}/v1/chat/completions`, key, extra: input.reasoning ? { reasoning_effort: "high" } : {} }
-  }
   let key = userOpenRouterKey(secrets.openrouterKey)
   if (!key) {
     key = env("OPENROUTER_API_KEY")
@@ -115,21 +91,15 @@ export function upstreamFor(input: JobInput, secrets: JobSecrets, env: (name: st
 
 function readInput(raw: unknown): JobInput | string {
   const i = raw as Partial<JobInput> | undefined
-  if (!i || (i.provider !== "openrouter" && i.provider !== "omniroute")) return "Unknown provider."
-  const omnirouteUrl = typeof i.omnirouteUrl === "string" ? i.omnirouteUrl : undefined
-  if (i.request !== undefined) {
-    const r = i.request as { path?: unknown; body?: unknown }
-    if (i.provider !== "omniroute" || typeof r?.path !== "string" || !OMNI_JOB_PATH.test(r.path) || !r.body || typeof r.body !== "object") return "Not allowed."
-    return { provider: "omniroute", model: typeof i.model === "string" ? i.model.slice(0, 200) : "", messages: [], omnirouteUrl, request: { path: r.path, body: r.body } }
-  }
+  if (!i || i.provider !== "openrouter") return "Unknown provider."
   if (typeof i.model !== "string" || !i.model || i.model.length > 200) return "Missing model."
   if (i.team !== undefined) {
     const team = readTeam(i.team)
     if (typeof team === "string") return team
-    return { provider: i.provider, model: i.model, messages: [], reasoning: !!i.reasoning, omnirouteUrl, team }
+    return { provider: i.provider, model: i.model, messages: [], reasoning: !!i.reasoning, team }
   }
   if (!Array.isArray(i.messages) || !i.messages.length) return "Missing messages."
-  return { provider: i.provider, model: i.model, messages: i.messages, reasoning: !!i.reasoning, omnirouteUrl }
+  return { provider: i.provider, model: i.model, messages: i.messages, reasoning: !!i.reasoning }
 }
 
 /**
@@ -159,7 +129,7 @@ export async function jobsApi(
     }
     const input = readInput(parsed.input)
     if (typeof input === "string") return json(400, { error: { message: input } })
-    const secrets: JobSecrets = { openrouterKey: parsed.secrets?.openrouterKey, omnirouteKey: parsed.secrets?.omnirouteKey, sitePass: parsed.secrets?.sitePass }
+    const secrets: JobSecrets = { openrouterKey: parsed.secrets?.openrouterKey, sitePass: parsed.secrets?.sitePass }
     // Problems that are known now are reported now, not as a failed job.
     const up = upstreamFor(input, secrets, deps.env)
     if ("error" in up) return json(up.code ?? 400, { error: { message: up.error } })
@@ -242,8 +212,7 @@ export async function readStream(body: ReadableStream<Uint8Array>, job: JobRecor
         continue
       }
       if (chunk.error) throw new Error(chunk.error.message ?? "The model stopped with an error.")
-      // OmniRoute's "keepalive" chunks aren't from a model.
-      if (!job.servedBy && chunk.model && chunk.model !== "keepalive") job.servedBy = chunk.model
+      if (!job.servedBy && chunk.model) job.servedBy = chunk.model
       const choice = chunk.choices?.[0]
       const delta = choice?.delta
       if (delta?.reasoning) job.thinking += delta.reasoning
@@ -288,29 +257,24 @@ export async function runJob(id: string, secrets: JobSecrets, deps: { store: Job
     if (await store.get(`cancel/${id}`)) controller.abort(new Error("cancelled"))
     await save().catch(() => {})
   }
-  // A request that answers all at once gives no progress to check for cancelling, so check on a timer.
-  const watch = input.request
-    ? setInterval(() => void store.get(`cancel/${id}`).then((c) => c && controller.abort(new Error("cancelled")), () => {}), 2000)
-    : undefined
   const post = (body: unknown) =>
-    inferenceFetch(up.url, {
+    fetch(up.url, {
       method: "POST",
       signal: controller.signal,
       headers: {
         authorization: `Bearer ${up.key}`,
         "content-type": "application/json",
-        accept: input.request ? "application/json" : "text/event-stream",
+        accept: "text/event-stream",
         ...(deps.siteUrl ? { "http-referer": deps.siteUrl } : {}),
         "x-openrouter-title": "Jonny's AI project",
       },
       body: JSON.stringify(body),
     })
   let retried = 0
-  // Chat calls get one more try on a busy or briefly failing provider (never media requests,
-  // which can cost money each time).
+  // One more try on a busy or briefly failing provider.
   const send = async (body: unknown) => {
     const res = await post(body)
-    if (input.request || !RETRYABLE.has(res.status)) return res
+    if (!RETRYABLE.has(res.status)) return res
     const header = res.headers.get("retry-after")
     const wait = header !== null && header.trim() !== "" && Number.isFinite(Number(header)) ? Math.min(MAX_RETRY_WAIT_S, Number(header)) : 2
     await res.body?.cancel().catch(() => {})
@@ -341,7 +305,6 @@ export async function runJob(id: string, secrets: JobSecrets, deps: { store: Job
         step.status = "running"
         await save().catch(() => {})
         const res = await send({ model: input.model, messages: teamMessages(task, members, i, reports), stream: true, ...up.extra })
-        job.route = res.headers.get("x-omniroute-decision") ?? job.route
         if (!res.ok || !res.body) {
           const f = await failure(res)
           Object.assign(step, { status: "error", error: f.message })
@@ -355,14 +318,10 @@ export async function runJob(id: string, secrets: JobSecrets, deps: { store: Job
       }
       if (job.status === "running") job.status = "done"
     } else {
-      const res = await send(input.request ? input.request.body : { model: input.model, messages: input.messages, stream: true, ...up.extra })
-      job.route = res.headers.get("x-omniroute-decision") ?? undefined
+      const res = await send({ model: input.model, messages: input.messages, stream: true, ...up.extra })
       if (!res.ok || !res.body) {
         const f = await failure(res)
         Object.assign(job, { status: "error", error: f.message, code: f.code })
-      } else if (input.request) {
-        job.result = await res.json()
-        job.status = "done"
       } else {
         await readStream(res.body, job, progress)
         job.status = "done"
@@ -380,14 +339,13 @@ export async function runJob(id: string, secrets: JobSecrets, deps: { store: Job
     }
   } finally {
     clearTimeout(timer)
-    clearInterval(watch)
   }
   // One line per job in the function log: what ran and how it ended, never its content or keys.
   console.log(
     JSON.stringify({
       event: "ai-job",
       job: id.slice(0, 13),
-      kind: input.team ? "team" : input.request ? input.request.path : "chat",
+      kind: input.team ? "team" : "chat",
       provider: input.provider,
       model: input.model,
       status: job.status,

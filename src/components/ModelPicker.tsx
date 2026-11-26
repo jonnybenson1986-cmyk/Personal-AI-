@@ -18,7 +18,7 @@ export function ModelPicker() {
     const shown = catalog().filter(matches)
     const paid = shown.filter((m) => m.paid)
     return [
-      { heading: settings.provider === "omniroute" ? "Gateway models" : "Free models", models: shown.filter((m) => !m.paid) },
+      { heading: "Free models", models: shown.filter((m) => !m.paid) },
       { heading: "All other models · billed to your OpenRouter account", models: paid },
     ].filter((g) => g.models.length)
   }

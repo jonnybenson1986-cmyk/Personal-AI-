@@ -21,7 +21,9 @@ import {
   PRESETS,
   RANGES,
 } from "../../lib/imageops"
-import { ask, editImage, generateImage, hasGateway, mediaModels } from "../../lib/media-ai"
+import { ask, editImage, generateImage, mediaModels } from "../../lib/media-ai"
+import { paidModels } from "../../lib/providers"
+import { settings } from "../../lib/store"
 import { errorMessage } from "../../lib/providers"
 import { IconCamera, IconCrop, IconFlip, IconImage, IconMenu, IconPen, IconRedo, IconRotate, IconSparkle, IconText, IconUndo } from "../icons"
 
@@ -159,7 +161,8 @@ export default function ImageEditor(props: { onMenu: () => void }) {
   const [exportOpen, setExportOpen] = createSignal(false)
   const [format, setFormat] = createSignal<"image/png" | "image/jpeg">("image/jpeg")
   const [maxSide, setMaxSide] = createSignal(0)
-  const [models] = createResource(() => hasGateway() || undefined, () => mediaModels())
+  // Reloads when paid models are unlocked or locked on this device.
+  const [models] = createResource(() => String(paidModels(settings)), () => mediaModels())
   let preview!: HTMLCanvasElement
   let stage!: HTMLDivElement
   let picker!: HTMLInputElement
@@ -167,7 +170,7 @@ export default function ImageEditor(props: { onMenu: () => void }) {
 
   createEffect(() => {
     const m = models()
-    if (m && !imageModel()) setImageModel(m.image[0] ?? "")
+    if (m && !m.image.includes(imageModel())) setImageModel(m.image[0] ?? "")
   })
 
   onMount(async () => {
@@ -648,11 +651,11 @@ export default function ImageEditor(props: { onMenu: () => void }) {
             <section class="ai-box">
               <h3>AI image edit & create</h3>
               <Show
-                when={hasGateway()}
-                fallback={<p class="muted small-text">Editing a photo with AI and creating new images use your OmniRoute gateway. Choose it in Settings → AI provider, with an image model connected there.</p>}
+                when={models()?.image.length}
+                fallback={<p class="muted small-text">{models() ? "Creating and editing images uses OpenRouter's image models, which are paid. Unlock paid models in Settings → AI (passcode), with credit on the OpenRouter account." : "Loading image models…"}</p>}
               >
                 <select class="text-input" value={imageModel()} onChange={(e) => setImageModel(e.currentTarget.value)} aria-label="Image model">
-                  <For each={models()?.image ?? []} fallback={<option value="">{models() ? "No image models in OmniRoute" : "Loading…"}</option>}>
+                  <For each={models()?.image ?? []}>
                     {(id) => <option value={id}>{id}</option>}
                   </For>
                 </select>

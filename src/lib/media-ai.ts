@@ -1,55 +1,86 @@
-// AI image and audio features. Image generation/editing, transcription and AI voices come
-// from the user's OmniRoute gateway (OpenRouter's free models can't do them). Describing a
-// photo and turning plain-English instructions into edits work with any chat model.
-import { toFile } from "openai"
-import { gatewayMediaModels } from "./models"
-import { client, lastGatewayModels, listModels, streamChat } from "./providers"
-import { gatewayReady } from "./route"
+// AI image and audio features, all through OpenRouter (the AI behind the site). Creating and
+// editing images and AI voices use OpenRouter's paid image and audio models, so they need paid
+// models unlocked (the passcode, or your own key with credit). Transcription has a free model.
+// Describing a photo and turning plain-English instructions into edits work with any chat model.
+import type OpenAI from "openai"
+import { imageFrom, mediaModelsFrom, pcmToWav } from "./mediaops.ts"
+import { client, lastOpenRouterModels, listModels, paidModels, streamChat } from "./providers"
 import { settings } from "./store"
 
-export const hasGateway = () => settings.provider === "omniroute" && gatewayReady(settings.omnirouteUrl, settings.omnirouteKey)
-
-/** OmniRoute's image/speech/transcription models; loads the model list if it hasn't been. */
+/** The image and audio models; loads OpenRouter's list if it hasn't been. */
 export async function mediaModels() {
-  if (!hasGateway()) return { image: [], speech: [], transcription: [] }
-  // listModels keeps the full list; load it now if the picker hasn't yet.
-  if (!lastGatewayModels.length) await listModels(settings).catch(() => undefined)
-  return gatewayMediaModels(lastGatewayModels)
+  if (!lastOpenRouterModels.length) await listModels(settings).catch(() => undefined)
+  return mediaModelsFrom(lastOpenRouterModels, paidModels(settings))
 }
 
-function needGateway() {
-  if (!hasGateway()) throw new Error("This needs your OmniRoute gateway. Choose it in Settings → AI provider.")
+async function dataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
 }
 
-async function imageResult(data: { b64_json?: string | null; url?: string | null }[] | undefined) {
-  const first = data?.[0]
-  if (first?.b64_json) return new Blob([Uint8Array.from(atob(first.b64_json), (c) => c.charCodeAt(0))], { type: "image/png" })
-  if (first?.url) return (await fetch(first.url)).blob()
-  throw new Error("The image model returned no image.")
+async function imageRequest(model: string, content: OpenAI.Chat.ChatCompletionContentPart[]) {
+  const res = await client(settings).chat.completions.create({
+    model,
+    messages: [{ role: "user", content }],
+    modalities: ["image", "text"],
+  } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming)
+  return imageFrom(res.choices[0]?.message)
 }
 
-export async function generateImage(prompt: string, model: string, size = "1024x1024") {
-  needGateway()
-  const res = await client(settings).images.generate({ model, prompt, size: size as "1024x1024", response_format: "b64_json" } as never)
-  return imageResult((res as { data?: { b64_json?: string; url?: string }[] }).data)
-}
+export const generateImage = (prompt: string, model: string) => imageRequest(model, [{ type: "text", text: prompt }])
 
 export async function editImage(image: Blob, prompt: string, model: string) {
-  needGateway()
-  const res = await client(settings).images.edit({ model, prompt, image: await toFile(image, "image.png", { type: image.type || "image/png" }), response_format: "b64_json" } as never)
-  return imageResult((res as { data?: { b64_json?: string; url?: string }[] }).data)
+  return imageRequest(model, [
+    { type: "text", text: `Edit this image: ${prompt}. Return the edited image.` },
+    { type: "image_url", image_url: { url: await dataUrl(image) } },
+  ])
 }
 
 export async function transcribe(audio: Blob, model: string) {
-  needGateway()
-  const res = await client(settings).audio.transcriptions.create({ model, file: await toFile(audio, "audio.wav", { type: audio.type || "audio/wav" }) })
-  return (res as { text: string }).text
+  const data = (await dataUrl(audio)).split(",")[1]
+  const res = await client(settings).chat.completions.create({
+    model,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Transcribe this recording word for word. Reply with only the transcript, nothing else." },
+          { type: "input_audio", input_audio: { data, format: "wav" } },
+        ],
+      },
+    ],
+  })
+  return (res.choices[0]?.message?.content ?? "").trim()
 }
 
+export const VOICES = ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse"]
+
+/** Speech from an OpenRouter voice model. Audio comes as a stream of base64 PCM pieces. */
 export async function speak(text: string, model: string, voice = "alloy") {
-  needGateway()
-  const res = await client(settings).audio.speech.create({ model, input: text, voice: voice as "alloy" })
-  return new Blob([await res.arrayBuffer()], { type: res.headers.get("content-type") ?? "audio/mpeg" })
+  const stream = await client(settings).chat.completions.create({
+    model,
+    messages: [
+      { role: "system", content: "Read the user's text aloud exactly as written. Don't add anything." },
+      { role: "user", content: text },
+    ],
+    modalities: ["text", "audio"],
+    audio: { voice, format: "pcm16" },
+    stream: true,
+  } as OpenAI.Chat.ChatCompletionCreateParamsStreaming)
+  const parts: Uint8Array[] = []
+  for await (const chunk of stream) {
+    const data = (chunk.choices[0]?.delta as { audio?: { data?: string } } | undefined)?.audio?.data
+    if (data) parts.push(Uint8Array.from(atob(data), (c) => c.charCodeAt(0)))
+  }
+  const pcm = new Uint8Array(parts.reduce((n, p) => n + p.length, 0))
+  let at = 0
+  for (const p of parts) pcm.set(p, (at += p.length) - p.length)
+  if (!pcm.length) throw new Error("The voice model answered without audio. Try another voice model.")
+  return pcmToWav(pcm)
 }
 
 /** One complete answer from the current chat model (no streaming UI needed). */

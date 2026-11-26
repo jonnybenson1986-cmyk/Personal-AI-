@@ -104,7 +104,7 @@ test("the visitor limit allows the allowance, refuses the next request with a wa
   assert.equal(wait, 50) // 50 seconds to the next minute
   assert.equal(await overLimit(store, "read", "5.6.7.8", 3, t), undefined, "another visitor is counted separately")
   assert.equal(await overLimit(store, "read", "1.2.3.4", 3, t + 60_000), undefined, "a new minute starts fresh")
-  assert.equal(await overLimit(store, "omniroute", "1.2.3.4", 3, t), undefined, "each endpoint is counted separately")
+  assert.equal(await overLimit(store, "unlock", "1.2.3.4", 3, t), undefined, "each endpoint is counted separately")
   await purgeLimits(store, t + 2 * 3_600_000)
   assert.equal(data.size, 0)
 })

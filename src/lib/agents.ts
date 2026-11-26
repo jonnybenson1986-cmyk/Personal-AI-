@@ -103,7 +103,7 @@ export function toolNotes(tools: string[] = []) {
   const notes: string[] = []
   const has = (t: string) => tools.includes(t)
   if (has("WebFetch")) notes.push("Web pages: links in your task are read for it")
-  if (has("WebSearch")) notes.push("Web search: through OmniRoute's search, when connected")
+  if (has("WebSearch")) notes.push("Web search: not built in, so paste links to the pages it should use")
   if (has("Read") || has("Edit")) notes.push("Files: your Cowork files can go with the task")
   if (has("Write") || has("Edit")) notes.push("Deliverables: files it writes can be saved to Cowork")
   if (has("Bash")) notes.push("Commands: can't run here, so it works without them")

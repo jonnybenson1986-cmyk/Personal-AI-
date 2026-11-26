@@ -51,7 +51,7 @@ export const hasImages = (messages: ChatMessage[]) =>
 /**
  * A model that can see pictures, when the chosen one is known not to. Undefined means keep
  * the chosen one: it sees images, or we can't tell (not in the list, or the list doesn't say,
- * as with routers and combos on some gateways). `auto` is the router to prefer.
+ * as with routers). `auto` is the router to prefer.
  */
 export function visionModel(model: ModelRef, known: ModelInfo[], auto: string): ModelRef | undefined {
   if (known.find((m) => m.id === model.id)?.vision !== false) return undefined

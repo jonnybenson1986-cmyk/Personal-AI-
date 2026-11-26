@@ -2,7 +2,7 @@
 
 A personal AI chat, coding, design and media app that runs on **free open models** (Google Gemma, NVIDIA Nemotron, MiniMax and more) through [OpenRouter](https://openrouter.ai). Deploy it to Netlify and install it on your phone or computer.
 
-- **Two AI providers** (Settings → AI provider): OpenRouter's free models, or your own **[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** gateway, which puts 300+ providers (150+ with free tiers) behind one endpoint with automatic fallback.
+- **One AI provider, OpenRouter:** the site's own key (on Netlify) powers every device with nothing to paste. Free models work for everyone; every other model (GPT, Claude, Gemini, Grok and hundreds more) is unlocked per device with the site's passcode, or with your own OpenRouter key.
 - **Auto (free)** picks an available free model for each message, or you can choose a specific one. The model list is live, so new free models appear on their own.
 - **Compare side by side:** send one message to two models at once.
 - **The + menu** adds context and tools to a message:
@@ -19,19 +19,14 @@ A personal AI chat, coding, design and media app that runs on **free open models
   - **Commit & push** button: the same thing in one tap, onto a new branch with a pull request (default) or the current branch.
 - **Design** studio: describe a landing page, social post, story, poster, logo, business card, app screen or slide and the AI designs it as HTML (or SVG for logos), shown live as it's written. Ask for changes to get new versions and go back to any of them. Download as PNG, HTML or SVG, or copy the code. Designs are saved on your device.
 - **Cowork:** bring files and work on them with the AI. Add documents, spreadsheets (CSV), PDFs, Word files, images or code, or drop them in; on Chrome and Edge on a computer you can **open a whole folder** and save changes back to it. The AI reads them (text inside PDFs and Word files too; tick images to let it see them), answers questions and writes new or improved files that you **Save** with one tap. Edit files yourself, revert to the original, download one file or everything as a zip. Quick asks: summarize, compare, pull out action items, make a table, proofread, write a report.
-- **Photo** editor: brightness, contrast, saturation, warmth, hue, vignette and blur sliders; filters (Vivid, Warm, Mono, Noir, Sepia…); crop with aspect ratios, rotate and flip; draw and add text; undo/redo; export JPEG or PNG at full size or smaller. AI: **AI adjust** (describe the look you want), **Describe** the photo, and with OmniRoute, **AI edit** and **generate** images.
-- **Audio** editor: open a file or record from the microphone, select on the waveform, then keep or delete the selection, fade in/out, change volume, normalize, mute, reverse, speed up or slow down, insert silence, make mono, and append recordings; undo/redo; export WAV. With OmniRoute: **transcribe** speech to text and turn text into **speech** with a choice of voices.
+- **Photo** editor: brightness, contrast, saturation, warmth, hue, vignette and blur sliders; filters (Vivid, Warm, Mono, Noir, Sepia…); crop with aspect ratios, rotate and flip; draw and add text; undo/redo; export JPEG or PNG at full size or smaller. AI: **AI adjust** (describe the look you want), **Describe** the photo, and **AI edit** and **create** images with OpenRouter's image models (paid, so they need paid models unlocked).
+- **Audio** editor: open a file or record from the microphone, select on the waveform, then keep or delete the selection, fade in/out, change volume, normalize, mute, reverse, speed up or slow down, insert silence, make mono, and append recordings; undo/redo; export WAV. AI: **transcribe** speech to text (a free model, or paid ones when unlocked) and turn text into **speech** with a choice of voices (OpenRouter's paid voice models).
 - **Agents:** the 283 specialist agents of [The Agency](https://github.com/msitarzewski/agency-agents) (MIT), in 18 divisions from Engineering and Design to Marketing, Sales, Security and Finance.
   - Search them, read any agent's full brief, and give a task to one agent or a team of up to 6 who work in order, each building on the reports before (ready-made teams: Landing page sprint, Code review, Idea to plan, Social campaign).
   - Tasks run on the site's server, so they keep going when the app is closed. Each agent reports back with a summary, the finished work and next steps; a badge on **Agents** shows new reports, and the app can send a notification.
-  - What the agents can use: your Cowork files (tick **Include Cowork files**), web pages linked in the task (read by the site, no key needed), and web search through OmniRoute when it has a search provider. Files they write can be saved to Cowork in one tap.
+  - What the agents can use: your Cowork files (tick **Include Cowork files**), and web pages linked in the task (read by the site, no key needed). Files they write can be saved to Cowork in one tap.
   - **Chat with** any agent: a new chat guided by its brief.
-  - No extra keys: agents use the same AI as the rest of the app (the site's OpenRouter key, your own, or OmniRoute).
-- **Omni** (OmniRoute hub): everything needed to run [OmniRoute](https://www.omniroute.online) and use it from Jonny's AI.
-  - **Set up:** step-by-step install for a computer, an Android phone (Termux), Docker or from source, with copyable commands; connecting providers, creating an API key and making it reachable from your phone (Cloudflare Quick Tunnel or `CORS_ALLOWED_ORIGINS`); connect and test; switch all AI to OmniRoute in one tap; check your key's usage.
-  - **Tools:** web search, read any web page as clean text, make videos, make music, and read the text in PDFs and photos (OCR). Results can be downloaded, copied or saved to Cowork. Slow ones (video, music) keep going on the server if you close the app.
-  - **Providers & routing:** OmniRoute's routing modes and free providers worth connecting.
-  - The model picker gets OmniRoute's routing modes (**auto**, best for code, fastest, cheapest, smartest, most available), and each reply says which provider answered and how fast (e.g. "via groq · 812 ms").
+  - No extra keys: agents use the same AI as the rest of the app (the site's OpenRouter key, or your own).
 - **Keeps working when the app is closed:** replies in Chat, Code, Cowork and Design are written on the site's server, so closing the app, switching apps or locking your phone doesn't stop them. When you open the app again the finished reply is there (or it carries on live if it's still being written). Stop still stops it. It can be turned off in **Settings → Keep working when the app is closed**.
 - Streaming answers, the model's thought process where it shares one, Markdown and code highlighting.
 - **Code canvas:** preview HTML/SVG the AI writes, then copy or download it.
@@ -41,14 +36,16 @@ A personal AI chat, coding, design and media app that runs on **free open models
 
 ## Getting started
 
-The app needs a free OpenRouter key. No card or payment is required.
+The AI runs on [OpenRouter](https://openrouter.ai). Put one key on Netlify and every device works with nothing to paste:
 
-1. Sign up at [openrouter.ai](https://openrouter.ai), open **Settings → API Keys**, and create a key.
-2. Open the app and paste the key under **Settings → OpenRouter key**.
+1. Sign up at [openrouter.ai](https://openrouter.ai), open **Settings → API Keys**, and create a key. Free models need no card.
+2. In Netlify, under **Site configuration → Environment variables**, add `OPENROUTER_API_KEY` with that key (the **Production** value is the one the live site uses), then **Deploys → Trigger deploy → Deploy site**.
 
-The key is saved only on your device.
+Anyone who opens the site can use its free models, and the site's key only reaches free models unless a device is unlocked with the passcode, so strangers can't spend your credit.
 
-**Optional: put the key on Netlify instead,** so the app works on every device without pasting it. Add `OPENROUTER_API_KEY` under **Site configuration → Environment variables**, then redeploy. The site's key only ever reaches free models, because the proxy blocks paid models and paid plugins, so it can't cost you money. Anyone who opens the site can use its free daily messages.
+**Paid models on your own devices:** add `PAID_PASSCODE` (any passcode you choose) as another Netlify variable and redeploy. On each device, enter it once under **Settings → AI → Paid models**; that device then gets every OpenRouter model, billed to the site's OpenRouter account (add credit at openrouter.ai → Credits). The passcode stays on Netlify: a device gets a signed pass that only the server can make. Each visitor gets 5 tries a minute and the whole site 30 wrong ones an hour, and changing the passcode (or the key) locks every device.
+
+**Or use your own key on one device:** paste it under **Settings → Your own OpenRouter key**. Saved only on that device; paid models are then billed to that key.
 
 ### How the Code terminal works
 
@@ -67,45 +64,22 @@ Pushing needs a GitHub token, saved only on your device:
 
 If the repo is this site's own repo, anything pushed to `main` goes live on Netlify, so the default is a branch plus pull request: review it on GitHub, then merge.
 
-### Using your own OmniRoute gateway
-
-[OmniRoute](https://github.com/diegosouzapw/OmniRoute) (MIT) is a free AI gateway you run yourself. It connects many providers' free tiers and your own accounts behind one OpenAI-compatible endpoint, and falls back between them automatically. It's a server, so it runs on your computer, an Android phone (Termux), Docker or a cloud host, not on Netlify. Jonny's AI connects to it.
-
-1. Install and start it: `npm install -g omniroute`, then `omniroute` (it needs Node.js 24, or 22.22.2 or newer). The dashboard opens at http://localhost:20128. A new OmniRoute can't answer anything until you connect at least one provider in step 2, and its API needs a key: `curl http://localhost:20128/v1/models -H "Authorization: Bearer YOUR_KEY"`. If you'll use a public tunnel, start it with `REQUIRE_API_KEY=true omniroute` so only requests with your key are answered.
-2. In its dashboard, connect a few providers under **Providers**, then copy an API key from **Endpoints**.
-3. In Jonny's AI, open **Settings → AI provider → OmniRoute** and enter the address and key, then tap **Test connection**:
-   - **From your phone or anywhere:** turn on the **Cloudflare tunnel** in OmniRoute's Dashboard → Endpoints and use its `https://…` address. Requests go through this site's server, so OmniRoute needs no extra settings.
-   - **On the computer running OmniRoute:** use `http://localhost:20128`. The browser talks to it directly, so start OmniRoute with `CORS_ALLOWED_ORIGINS=https://your-site.netlify.app`.
-
-**Optional: put OmniRoute on Netlify instead,** so every device uses it without entering anything. OmniRoute itself can't run on Netlify (it's a server that stays on, with its own database), so run it on a cloud host or a computer first (see **Omni → Set up**; on the cloud host it needs its own `JWT_SECRET`, `API_KEY_SECRET` and `INITIAL_PASSWORD`, which that screen generates). Then in Netlify, under **Site configuration → Environment variables**, add:
-
-| Variable | Value |
-| --- | --- |
-| `OMNIROUTE_URL` | Your gateway's public `https://` address, e.g. `https://omniroute.example.com` or its Cloudflare tunnel. `/v1` on the end is fine either way. |
-| `OMNIROUTE_API_KEY` | An API key from OmniRoute's **Dashboard → API Keys**. |
-
-Then redeploy. When both are set, leaving the OmniRoute address blank in the app uses the site's gateway, and if the site has no `OPENROUTER_API_KEY` the app switches to OmniRoute on its own. The address and key stay on Netlify's server and never reach the browser, and the site's key is only ever sent to the site's own address. An address entered in the app still goes with the key entered in the app. **Anyone who can open the site can use this gateway,** including any paid providers you've connected to it, so give the key a quota in OmniRoute's dashboard or turn on Netlify's password protection for the site.
-
-If OmniRoute can't be reached or can't answer (it isn't running, the address can't work on this device, like `localhost` on an iPhone, or none of its providers worked), the free AI answers instead whenever the app or site has an OpenRouter key, with a note under the reply. Settings and the Omni screen point out a `localhost` address on an iPhone, and **Use OmniRoute for all AI** only switches once the connection test succeeds.
-
-Or follow the **Omni** screen in the app, which has these steps for each kind of device and a connection test. The model picker then lists OmniRoute's routing modes (auto, coding, fast, cheap, smart, offline), models and combos. Chat, the AI tools, Code, Design and Cowork all use it. OmniRoute also unlocks the media features that OpenRouter's free tier doesn't have: image generation and AI photo edits, speech-to-text and text-to-speech, using whichever image and audio models your gateway offers. The site's proxy only forwards the model list, chat, images, audio, video, music, search, page reading, OCR and your key's own usage, only to public `https://` addresses, and only with your own OmniRoute key.
-
 ### How replies keep going when the app is closed
 
 A web app stops running when it's closed, so the work happens on Netlify instead:
 
 1. The app sends the request to `/api/job-start` (an edge function). It saves the request in [Netlify Blobs](https://docs.netlify.com/build/data-and-storage/netlify-blobs/) and starts the `run-job` [background function](https://docs.netlify.com/build/functions/background-functions/), which can run for up to 15 minutes whether or not anyone is watching.
-2. That function streams the reply from OpenRouter (or your OmniRoute gateway) and saves it as it arrives.
+2. That function streams the reply from OpenRouter and saves it as it arrives.
 3. The app reads the progress about once a second, so you still see the reply being written. If the app was closed, it picks the reply up when it opens again.
 
-Your keys go only with the request that starts a reply and are never stored. The saved request is deleted as soon as the reply starts, a finished reply is deleted once the app has it, and anything left over is cleaned up after a day. Background functions and Blobs are included in Netlify's free plan. When the server can't run a reply (when running locally with `npm run dev`, or with an OmniRoute address only your computer can reach, like `http://localhost:20128`), the app streams it directly as before, and it only finishes while the app is open. Edits in the Photo and Audio editors happen on your device and are instant.
+Your keys go only with the request that starts a reply and are never stored. The saved request is deleted as soon as the reply starts, a finished reply is deleted once the app has it, and anything left over is cleaned up after a day. Background functions and Blobs are included in Netlify's free plan. When the server can't run a reply (when running locally with `npm run dev`), the app streams it directly as before, and it only finishes while the app is open. Edits in the Photo and Audio editors happen on your device and are instant.
 
 ### Reliability and protection
 
 - **Long chats fit the model.** Each reply sends only what fits the chosen model's context window (60% of it, leaving room for the answer), newest messages first. When older messages no longer fit, the app asks the model once to summarize them and keeps that summary with the chat, so it still remembers the start; if that fails it says older messages were left out. Pictures are resent only for the last two messages.
 - **Busy free models fall back.** A chosen free model is sent with OpenRouter's fallback list (`models: [your model, "openrouter/free"]`), so if it's busy, rate-limited or down, another free model answers instead of an error.
 - **Background jobs retry and don't double up.** The server tries a busy or briefly failing provider (429, 500, 502, 503, 504) once more before any text, after its `Retry-After` (up to 8 seconds). Each start carries a one-off key, so if the connection drops and the app retries, it gets the job already running instead of a second one.
-- **Rate limits per visitor.** Job starts (`/api/job-start`, 20 a minute), the AI proxy (`/api/openrouter`, 60 a minute), the page reader (`/api/read`, 30 a minute) and the OmniRoute relay (`/api/omniroute`, 120 a minute) count requests per IP address in Netlify Blobs, so a script can't drain the site's free key or Netlify credits. Following a running job isn't limited. The count is approximate under a burst of simultaneous requests, and a visitor whose address changes between requests (some mobile networks) gets a fresh allowance each time.
+- **Rate limits per visitor.** Job starts (`/api/job-start`, 20 a minute), the AI proxy (`/api/openrouter`, 60 a minute), the page reader (`/api/read`, 30 a minute) and the passcode check (`/api/unlock`, 5 a minute) count requests per IP address in Netlify Blobs, so a script can't drain the site's free key or Netlify credits. Following a running job isn't limited. The count is approximate under a burst of simultaneous requests, and a visitor whose address changes between requests (some mobile networks) gets a fresh allowance each time.
 - **Job logs.** Each background job writes one line to the function log in Netlify (kind, provider, model, result, time, retries), never its content or keys.
 - **Smoke test.** `npm run smoke -- https://your-site.netlify.app` checks the live site end to end: status, free models, a background reply, an agent report, the page reader and the agents. It uses about two free requests.
 
@@ -128,9 +102,9 @@ Browser (SolidJS PWA)
 
 | Path | What it is |
 | --- | --- |
-| `src/lib/providers.ts` | Streams chat completions from OpenRouter, lists free models |
+| `src/lib/providers.ts` | Streams chat completions from OpenRouter, lists its models |
 | `src/lib/history.ts` | Builds the message history (unit tested) |
-| `src/lib/models.ts` | Picks the free chat models out of OpenRouter's list |
+| `src/lib/models.ts` | Picks the chat models out of OpenRouter's list (free, then paid with prices) |
 | `src/lib/store.ts` | Chats, streaming state, IndexedDB persistence |
 | `src/components/` | Sidebar, model picker, thread, composer, canvas, settings |
 | `src/lib/github.ts` | Reads repos; pushes files as one commit (branch, pull request) |
@@ -141,21 +115,21 @@ Browser (SolidJS PWA)
 | `src/lib/codeai.ts` | The Code workspace's AI assistant |
 | `src/components/code/` | Code view: file tree, editor, AI panel, terminal, commit sheet |
 | `src/lib/web.ts`, `src/lib/tools.ts` | Web page reader, AI tools |
-| `netlify/edge-functions/` | `openrouter` proxy, `read` (web pages) and `status` |
+| `netlify/edge-functions/` | `openrouter` proxy, `read` (web pages), `status` and `unlock` (the passcode) |
 | `netlify/shared/proxy.ts` | Path allowlist and free-model guard for the site key |
 | `netlify/shared/read.ts` | Fetches public web pages and turns them into text |
-| `netlify/shared/gateway.ts` | Proxy to your OmniRoute gateway (public https only, unit tested) |
+| `netlify/shared/passcode.ts` | The passcode for paid models: signed device passes, limits on wrong guesses (unit tested) |
 | `netlify/shared/jobs.ts`, `netlify/functions/run-job.mts` | Replies that run on the server and keep going when the app is closed (unit tested) |
-| `src/lib/omni.ts`, `src/lib/omniapi.ts`, `src/components/omni/` | Omni screen: OmniRoute setup guide, routing modes and tools (helpers unit tested) |
 | `public/agents/`, `scripts/import-agents.ts` | The Agency's agents (roster and briefs, MIT; see `public/agents/LICENSE.md`) and the script that imports them |
 | `src/lib/agents.ts`, `src/lib/agency.ts`, `netlify/shared/team.ts`, `src/components/agents/` | Agents screen: roster search, tasks, teams and reports; team prompts (unit tested) |
 | `src/lib/jobs.ts` | Starts server replies and follows their progress |
-| `src/lib/route.ts` | Decides whether OmniRoute is reached through the proxy or directly |
+| `src/lib/route.ts`, `src/lib/catalog.ts` | What the site has set up (key, passcode) and the model list |
+| `src/lib/routing.ts` | Links in a message to read, and a model that can see pictures (unit tested) |
 | `src/lib/design.ts`, `src/components/design/` | Design studio: design types, prompts, reading designs out of replies (unit tested) |
 | `src/lib/cowork.ts`, `src/lib/coworkspace.ts`, `src/components/cowork/` | Cowork: file types, CSV, Word text, what the AI sees (unit tested); files, folders, zip, AI |
 | `src/lib/imageops.ts`, `src/components/media/ImageEditor.tsx` | Photo editor: pixel adjustments, crop and rotation maths (unit tested) |
 | `src/lib/audioops.ts`, `src/components/media/AudioEditor.tsx` | Audio editor: cut, fade, gain, speed, WAV encoding (unit tested) |
-| `src/lib/media-ai.ts` | Image generation and edits, transcription and speech through OmniRoute |
+| `src/lib/media-ai.ts` | Image creation and edits, transcription and speech through OpenRouter |
 
 ## Deploy to Netlify
 
@@ -173,7 +147,7 @@ In Netlify, choose **Add new site → Import an existing project** and pick this
 1. Open the site in **Safari**, tap **Share** → **Add to Home Screen** → **Add**. It opens full screen like an app.
 2. Chat, Code, Design, Cowork, Photo and Audio work straight away when the site has `OPENROUTER_API_KEY` set on Netlify (no key to paste on the phone). Replies keep going on the server when you leave the app.
 3. To push code to GitHub from the phone, add a GitHub token in **Settings**.
-4. For OmniRoute: an iPhone can't run it, so open **Omni → Set up → iPhone / cloud**. It walks through running OmniRoute on a cloud host from Safari, with its secrets and dashboard password generated on the phone, or connecting to one running on your computer through its Cloudflare tunnel.
+4. For paid models, enter the site's passcode once under **Settings → AI → Paid models**.
 
 On iPhone, Download buttons in the home-screen app open the share sheet (Save to Files, Save Image…), and text boxes no longer zoom the page when tapped.
 

@@ -18,7 +18,6 @@ const DesignView = lazy(() => import("./components/design/DesignView"))
 const CoworkView = lazy(() => import("./components/cowork/CoworkView"))
 const ImageEditor = lazy(() => import("./components/media/ImageEditor"))
 const AudioEditor = lazy(() => import("./components/media/AudioEditor"))
-const OmniView = lazy(() => import("./components/omni/OmniView"))
 const AgentsView = lazy(() => import("./components/agents/AgentsView"))
 
 const SUGGESTIONS = [
@@ -94,9 +93,6 @@ export function App() {
                   <Match when={view() === "agents"}>
                     <AgentsView onMenu={() => setSidebar(true)} />
                   </Match>
-                  <Match when={view() === "omni"}>
-                    <OmniView onMenu={() => setSidebar(true)} />
-                  </Match>
                 </Switch>
               </Suspense>
             </main>
@@ -137,7 +133,6 @@ export function App() {
                         <button class="button primary wide" onClick={() => setShowSettings(true)}>
                           Add your free key
                         </button>
-                        <p class="muted small-text">Running your own OmniRoute gateway? Choose it under Settings → AI provider.</p>
                       </div>
                     </div>
                   }

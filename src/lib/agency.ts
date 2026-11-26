@@ -7,9 +7,7 @@ import { type TeamMember, teamMessages } from "../../netlify/shared/team.ts"
 import type { AgentIndex, AgentInfo } from "./agents"
 import { pickContext } from "./cowork"
 import { DETACH, followJob, type StepProgress, startJob } from "./jobs"
-import { omniConfigured, webSearch } from "./omniapi"
 import { errorMessage, isAbort, serverTarget, streamChat } from "./providers"
-import { searchHits } from "./omni"
 import { settings, uid } from "./store"
 
 export interface TaskStep {
@@ -27,7 +25,7 @@ export interface AgentTask {
   id: string
   /** What the user asked for. */
   task: string
-  /** What went with it: "notes.md", "example.com", "Web search"… */
+  /** What went with it: "notes.md", "example.com"… */
   context: string[]
   status: "preparing" | "running" | "done" | "error" | "stopped"
   /** The server job, while it runs there. */
@@ -42,8 +40,6 @@ export interface AgentTask {
 export interface ContextOptions {
   /** Cowork files (the ones picked there, or all). */
   cowork: boolean
-  /** Search the web for the task first (OmniRoute). */
-  search: boolean
 }
 
 const KEY = "agents:tasks"
@@ -100,7 +96,7 @@ async function readUrl(url: string) {
   return { title: body.title || new URL(url).hostname, url: body.url ?? url, text: body.text.slice(0, 40_000) }
 }
 
-/** The task with what goes with it: Cowork files, web pages it links to, and search results. */
+/** The task with what goes with it: Cowork files and the web pages it links to. */
 async function withContext(task: string, opts: ContextOptions) {
   const parts: string[] = [task]
   const labels: string[] = []
@@ -118,17 +114,6 @@ async function withContext(task: string, opts: ContextOptions) {
   if (pages.length) {
     parts.push(`Web pages linked in the task:\n\n${pages.map((p) => `<page url="${p.url}" title="${p.title}">\n${p.text}\n</page>`).join("\n\n")}`)
     labels.push(...pages.map((p) => new URL(p.url).hostname))
-  }
-  if (opts.search && omniConfigured()) {
-    try {
-      const { hits, answer } = searchHits(await webSearch(task.replace(URLS, "").slice(0, 300), { max: 8 }))
-      if (hits.length) {
-        parts.push(`Web search results for the task:\n\n${answer ? `Summary: ${answer}\n\n` : ""}${hits.map((h, i) => `${i + 1}. ${h.title} (${h.url})\n${h.snippet}`).join("\n\n")}`)
-        labels.push("Web search")
-      }
-    } catch {
-      // No search provider connected in OmniRoute: carry on without it.
-    }
   }
   return { text: parts.join("\n\n---\n\n"), labels }
 }

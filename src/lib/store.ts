@@ -2,7 +2,7 @@ import { createStore, produce, reconcile } from "solid-js/store"
 import { createSignal } from "solid-js"
 import { del, get, set } from "idb-keyval"
 import { fitMessages, type HistorySummary, inputBudget, summaryCovers, summaryRequest } from "./history"
-import { contextWindow, DEFAULT_SELECTION, GATEWAY_AUTO } from "./models"
+import { contextWindow, DEFAULT_SELECTION } from "./models"
 import { errorMessage, isAbort, resumeChat, streamChat, streamReply } from "./providers"
 import { linksToRead, pageSource } from "./routing"
 import { readPage } from "./web"
@@ -15,9 +15,6 @@ const convKey = (id: string) => `conversation:${id}`
 export const uid = () => crypto.randomUUID()
 
 const defaults: Settings = {
-  provider: "openrouter",
-  omnirouteUrl: "",
-  omnirouteKey: "",
   openrouterKey: "",
   githubToken: "",
   recentRepos: [],
@@ -31,8 +28,14 @@ function loadSettings(): Settings {
   try {
     const stored = { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}") } as Settings
     // Model choices saved before the switch to OpenRouter (bare ids like "claude-opus-5-5") no longer exist.
-    if (!Array.isArray(stored.models) || !stored.models.length || (stored.provider !== "omniroute" && !stored.models.every((m) => m?.id?.includes("/"))))
-      stored.models = stored.provider === "omniroute" ? [{ id: GATEWAY_AUTO }] : DEFAULT_SELECTION
+    // Settings from before OmniRoute was removed: its fields go, and its model names
+    // (bare ids like "auto") aren't OpenRouter's, so those chats start on Auto (free).
+    const old = stored as Settings & Record<string, unknown>
+    const gone = ["provider", "omnirouteUrl", "omnirouteKey", "gateway"].filter((field) => field in old)
+    for (const field of gone) delete old[field]
+    if (!Array.isArray(stored.models) || !stored.models.length || !stored.models.every((m) => m?.id?.includes("/"))) stored.models = DEFAULT_SELECTION
+    // Saved straight away, so an old gateway key doesn't stay on the device.
+    if (gone.length) localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored))
     return stored
   } catch {
     return defaults
@@ -257,13 +260,12 @@ const replyEvents = (update: (fn: (r: Reply) => void) => void) => ({
   servedBy: (m: string) => update((r) => (r.servedBy = m)),
 })
 
-async function settle(run: Promise<{ notice?: string; route?: string }>, update: (fn: (r: Reply) => void) => void, done: () => void) {
+async function settle(run: Promise<{ notice?: string }>, update: (fn: (r: Reply) => void) => void, done: () => void) {
   try {
     const result = await run
     update((r) => {
       r.status = "done"
       r.job = undefined
-      if (result.route) r.route = result.route
       if (result.notice) r.error = result.notice
     })
   } catch (error) {

@@ -1,5 +1,4 @@
 import type { ModelInfo, ModelRef } from "./types"
-import { ROUTING_MODES } from "./omni.ts"
 
 export const AUTO_MODEL = "openrouter/free"
 
@@ -86,58 +85,6 @@ export function filterOpenRouterModels(list: OpenRouterModel[], paid = false): M
 
 /** The free chat models from OpenRouter's model list, Auto first. */
 export const filterFreeModels = (list: OpenRouterModel[]) => filterOpenRouterModels(list)
-
-/** OmniRoute's own router: picks a model from your connected providers for each request. */
-export const GATEWAY_AUTO = "auto"
-
-export interface GatewayModel {
-  id: string
-  type?: string
-  subtype?: string
-  display_name?: string
-  owned_by?: string
-  context_length?: number
-  input_modalities?: string[]
-  capabilities?: { vision?: boolean }
-}
-
-// Image, audio, embedding and similar models can't chat.
-const NOT_GATEWAY_CHAT = new Set(["embedding", "image", "rerank", "audio", "moderation", "video", "music", "tts", "stt"])
-
-/** The chat models (and combos) from an OpenAI-compatible gateway's model list, auto first. */
-export function filterGatewayModels(list: GatewayModel[], routingModes = true): ModelInfo[] {
-  const models = list
-    .filter((m) => typeof m.id === "string" && (!m.type || !NOT_GATEWAY_CHAT.has(m.type)) && (routingModes || !NOT_CHAT.test(m.id)))
-    .map((m): ModelInfo => {
-      // Unknown (undefined) when the gateway doesn't say, so pictures aren't rerouted on a guess.
-      const vision = m.capabilities?.vision ?? (m.input_modalities ? m.input_modalities.includes("image") : undefined)
-      const context = m.context_length ? `${Math.round(m.context_length / 1000)}K context` : undefined
-      const kind = m.owned_by === "combo" ? "Combo" : undefined
-      return {
-        id: m.id,
-        ...(m.context_length ? { context: m.context_length } : {}),
-        label: m.id === GATEWAY_AUTO ? (routingModes ? "Auto (OmniRoute picks)" : "Auto (gateway picks)") : (m.display_name ?? m.id),
-        hint: m.id === GATEWAY_AUTO ? "Routes each message across your connected providers" : [kind, vision ? "Sees images" : undefined, context].filter(Boolean).join(" · ") || undefined,
-        vision,
-      }
-    })
-  if (!routingModes) return models.sort((a, b) => a.label.localeCompare(b.label))
-  // OmniRoute's routing modes always come first, with plain names, even if the list omits them.
-  const modes: ModelInfo[] = ROUTING_MODES.map((m) => ({ id: m.id, label: m.label, hint: m.hint, vision: models.find((x) => x.id === m.id)?.vision }))
-  const auto = models.filter((m) => (m.id === GATEWAY_AUTO || m.id.startsWith(`${GATEWAY_AUTO}/`)) && !ROUTING_MODES.some((r) => r.id === m.id))
-  const rest = models.filter((m) => !auto.includes(m) && !ROUTING_MODES.some((r) => r.id === m.id)).sort((a, b) => a.label.localeCompare(b.label))
-  return [...modes, ...auto, ...rest]
-}
-
-/** The gateway's image, speech (text to voice) and transcription models. */
-export function gatewayMediaModels(list: GatewayModel[]) {
-  const ids = (fn: (m: GatewayModel) => boolean) => list.filter(fn).map((m) => m.id).sort()
-  return {
-    image: ids((m) => m.type === "image"),
-    speech: ids((m) => (m.type === "audio" && m.subtype === "speech") || m.type === "tts"),
-    transcription: ids((m) => (m.type === "audio" && m.subtype !== "speech") || m.type === "stt"),
-  }
-}
 
 const windows = new Map<string, number>()
 /** Keeps the context windows from the last model list loaded, to fit long chats to them. */

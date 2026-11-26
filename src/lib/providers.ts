@@ -1,25 +1,17 @@
-// Talks to an OpenAI-compatible API with the official `openai` SDK: OpenRouter's free models
-// through the edge proxy, or the user's own OmniRoute gateway. Normalizes the stream into
-// StreamEvents.
+// Talks to OpenRouter, the AI behind the site, with the official `openai` SDK, through the
+// site's edge proxy (which adds the site's key when the app has none). Normalizes the stream
+// into StreamEvents.
 import OpenAI from "openai"
 import { type ChatMessage, fitMessages, inputBudget } from "./history"
-import { DEFAULT_MODELS, filterGatewayModels, filterOpenRouterModels, GATEWAY_AUTO, type GatewayModel, modelLabel, type OpenRouterModel } from "./models"
+import { AUTO_MODEL, DEFAULT_MODELS, filterOpenRouterModels, modelLabel, type OpenRouterModel } from "./models"
 import { freeFallback } from "../../netlify/shared/proxy.ts"
 import { followJob, JobError, restartEvents, startJob } from "./jobs"
-import { isIOS } from "./install"
-import { AUTO_MODEL } from "./models"
-import { gatewayPreset, type GatewayKind } from "./gateways"
 import { hasImages, visionModel } from "./routing"
-import { gatewayFor, isThisDevice, siteOpenRouter } from "./route"
 import { findTool } from "./tools"
-import type { Conversation, ModelInfo, ModelRef, Provider, StreamEvents, StreamResult, Turn } from "./types"
+import type { Conversation, ModelInfo, ModelRef, StreamEvents, StreamResult, Turn } from "./types"
 
 export interface Credentials {
   openrouterKey: string
-  provider?: Provider
-  omnirouteUrl?: string
-  omnirouteKey?: string
-  gateway?: GatewayKind
   /** This device's pass for paid models on the site's key (Settings → passcode). */
   sitePass?: string
   /** Run replies on the server when the caller can pick them up again (default on). */
@@ -35,23 +27,7 @@ export interface JobHooks {
 // placeholder asks the proxy to use the site's own key (free models only).
 const PLACEHOLDER_KEY = "set-on-server"
 
-// Remembered for error messages, which don't otherwise know where a request went.
-let lastGateway: { mode: "proxy" | "direct"; base: string } | undefined
-
 export function client(c: Credentials) {
-  if (c.provider === "omniroute") {
-    const route = gatewayFor(c.omnirouteUrl ?? "")
-    if (!route) throw new Error("Add your OmniRoute address in Settings.")
-    lastGateway = route
-    return new OpenAI({
-      baseURL: route.mode === "direct" ? `${route.base}/v1` : `${location.origin}/api/omniroute/v1`,
-      apiKey: c.omnirouteKey?.trim() || "no-key",
-      defaultHeaders: route.mode === "proxy" && route.base ? { "x-omniroute-url": route.base } : undefined,
-      dangerouslyAllowBrowser: true,
-      maxRetries: 1,
-    })
-  }
-  lastGateway = undefined
   return new OpenAI({
     baseURL: `${location.origin}/api/openrouter/v1`,
     apiKey: c.openrouterKey.trim() || PLACEHOLDER_KEY,
@@ -84,15 +60,14 @@ interface Chunk {
   }[]
 }
 
-// The last model lists loaded, to tell which models can see pictures.
-const listed: Record<Provider, ModelInfo[]> = { openrouter: DEFAULT_MODELS, omniroute: [] }
+// The last model list loaded, to tell which models can see pictures.
+let listed: ModelInfo[] = DEFAULT_MODELS
 
 export async function streamReply(req: StreamRequest): Promise<StreamResult> {
   const messages = fitMessages(req.conversation.system, req.history, req.current, req.model, req.budget ?? inputBudget(), req.conversation.summary).messages
   // A picture sent to a model that can't see would fail ("no endpoints support image input"),
   // so that message goes to one that can, and the reply says so.
-  const provider = req.credentials.provider ?? "openrouter"
-  const swap = hasImages(messages) ? visionModel(req.model, listed[provider], provider === "omniroute" ? GATEWAY_AUTO : AUTO_MODEL) : undefined
+  const swap = hasImages(messages) ? visionModel(req.model, listed, AUTO_MODEL) : undefined
   const result = await streamChat({
     messages,
     model: swap ?? req.model,
@@ -104,29 +79,16 @@ export async function streamReply(req: StreamRequest): Promise<StreamResult> {
     job: req.job,
   })
   if (!swap) return result
-  const note = `${modelLabel(req.model, listed[provider])} can't see pictures, so ${modelLabel(swap, listed[provider])} answered this one.`
+  const note = `${modelLabel(req.model, listed)} can't see pictures, so ${modelLabel(swap, listed)} answered this one.`
   return { ...result, notice: [note, result.notice].filter(Boolean).join(" ") }
 }
 
-/** Where a reply can run on the server: OpenRouter, or an OmniRoute gateway the server can reach. */
-function backgroundRoute(c: Credentials) {
-  if (c.background === false) return undefined
-  if (c.provider !== "omniroute") return { provider: "openrouter" as const }
-  const route = gatewayFor(c.omnirouteUrl ?? "")
-  return route?.mode === "proxy" ? { provider: "omniroute" as const, omnirouteUrl: route.base || undefined } : undefined
-}
-
-/** Where and with which keys work can run on the server, if it can (see jobs.ts). */
+/** Where and with which keys a reply can run on the server, unless background replies are off (see jobs.ts). */
 export function serverTarget(c: Credentials) {
-  const where = backgroundRoute(c)
-  if (!where) return undefined
-  const secrets = c.provider === "omniroute" ? { omnirouteKey: c.omnirouteKey?.trim() } : { openrouterKey: c.openrouterKey.trim() || undefined, sitePass: c.sitePass || undefined }
-  return { where, secrets }
+  if (c.background === false) return undefined
+  return { where: { provider: "openrouter" as const }, secrets: { openrouterKey: c.openrouterKey.trim() || undefined, sitePass: c.sitePass || undefined } }
 }
 
-function noteGateway(c: Credentials) {
-  lastGateway = c.provider === "omniroute" ? gatewayFor(c.omnirouteUrl ?? "") : undefined
-}
 
 interface ChatRequest {
   messages: ChatMessage[]
@@ -138,70 +100,32 @@ interface ChatRequest {
   job?: JobHooks
 }
 
-/** Why the free AI answered instead of OmniRoute, shown under the reply. */
-function fallbackNotice(error: unknown) {
-  if (isUnreachable(error)) return "OmniRoute couldn't be reached, so the free AI answered. Check it in Omni → Set up."
-  const reason = (error instanceof Error ? error.message : String(error)).split(";")[0].slice(0, 160)
-  return `OmniRoute couldn't answer (${reason}), so the free AI did. Connect a working provider in OmniRoute's dashboard → Providers.`
-}
-
-/** OmniRoute refused the key itself: that needs fixing, so it isn't hidden behind the free AI. */
-function isAuthError(error: unknown) {
-  const status = error instanceof OpenAI.APIError || error instanceof JobError ? error.status : undefined
-  return status === 401 || status === 403
-}
-
 /**
  * Streams one chat completion. With `job` hooks it runs on the server when it can, so it
  * finishes even if the app closes; the caller saves the id and calls `resumeChat` later.
- * If OmniRoute fails before answering (not running, an address this device can't use, or no
- * connected provider worked) and the free AI is available, the free AI answers instead, with a
- * notice saying why. A rejected OmniRoute key is shown as it is, since it needs fixing.
  */
 export async function streamChat(req: ChatRequest): Promise<StreamResult> {
-  let answered = false
-  const events: StreamEvents = {
-    ...req.events,
-    text: (d) => {
-      answered = true
-      req.events.text(d)
-    },
-  }
-  try {
-    return await streamOnce({ ...req, events })
-  } catch (error) {
-    const c = req.credentials
-    // Before any text: OmniRoute unreachable, or none of its providers could answer.
-    if (answered || c.provider !== "omniroute" || isAbort(error) || isAuthError(error) || !(c.openrouterKey.trim() || siteOpenRouter())) throw error
-    const result = await streamOnce({ ...req, credentials: { ...c, provider: "openrouter" }, model: { id: AUTO_MODEL } })
-    return { ...result, notice: [fallbackNotice(error), result.notice].filter(Boolean).join(" ") }
-  }
-}
-
-async function streamOnce(req: ChatRequest): Promise<StreamResult> {
   const target = req.job && serverTarget(req.credentials)
   if (target) {
-    noteGateway(req.credentials)
     const id = await startJob({ input: { ...target.where, model: req.model.id, messages: req.messages, reasoning: req.reasoning }, secrets: target.secrets }, req.signal)
     if (id) {
       req.job!.started(id)
       return followJob(id, req.events, req.signal)
     }
   }
-  const { data: stream, response } = await client(req.credentials)
+  const stream = await client(req.credentials)
     .chat.completions.create(
       {
         model: req.model.id,
         messages: req.messages as OpenAI.Chat.ChatCompletionMessageParam[],
         stream: true,
         // A busy free model falls back to OpenRouter's free router instead of failing.
-        ...(req.credentials.provider === "omniroute" ? {} : freeFallback(req.model.id)),
-        // OpenRouter's reasoning control, or the standard OpenAI field for a gateway.
-        ...(req.reasoning ? (req.credentials.provider === "omniroute" ? { reasoning_effort: "high" } : { reasoning: { effort: "high" } }) : {}),
+        ...freeFallback(req.model.id),
+        // OpenRouter's reasoning control; models that don't reason ignore it.
+        ...(req.reasoning ? { reasoning: { effort: "high" } } : {}),
       } as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
       { signal: req.signal },
     )
-    .withResponse()
 
   let served = false
   let notice: string | undefined
@@ -209,8 +133,7 @@ async function streamOnce(req: ChatRequest): Promise<StreamResult> {
     const chunk = raw as unknown as Chunk
     // Errors after the stream started arrive as a chunk with an `error` field.
     if (chunk.error) throw new Error(chunk.error.message ?? "The model stopped with an error.")
-    // OmniRoute's "keepalive" chunks aren't from a model.
-    if (!served && chunk.model && chunk.model !== "keepalive") {
+    if (!served && chunk.model) {
       served = true
       req.events.servedBy(chunk.model)
     }
@@ -222,8 +145,7 @@ async function streamOnce(req: ChatRequest): Promise<StreamResult> {
     if (choice?.finish_reason === "length") notice = "The response hit the length limit."
     if (choice?.finish_reason === "error") throw new Error("The model stopped with an error. Try again or pick another model.")
   }
-  // OmniRoute says which provider answered (readable when the site's proxy passes it on).
-  return { notice, route: response.headers.get("x-omniroute-decision") ?? undefined }
+  return { notice }
 }
 
 /**
@@ -231,12 +153,11 @@ async function streamOnce(req: ChatRequest): Promise<StreamResult> {
  * from the start again, so `clear` is called to drop the partial copy first.
  */
 export function resumeChat(id: string, credentials: Credentials, events: StreamEvents, signal: AbortSignal, clear: () => void) {
-  noteGateway(credentials)
   return followJob(id, restartEvents(events, clear), signal)
 }
 
-/** OmniRoute's full model list (including image and audio models) from the last load. */
-export let lastGatewayModels: GatewayModel[] = []
+/** OpenRouter's full model list from the last load, including image and audio models. */
+export let lastOpenRouterModels: OpenRouterModel[] = []
 
 /** Whether these are the user's own OpenRouter key, which can pay for any model. */
 export const ownOpenRouterKey = (c?: Credentials) => !!c?.openrouterKey?.trim().startsWith("sk-or-")
@@ -246,37 +167,33 @@ export const paidModels = (c?: Credentials) => ownOpenRouterKey(c) || !!c?.siteP
 
 /**
  * OpenRouter's chat models from its live list (needs no key): the free ones, and every other
- * one too with the user's own key. Or the gateway's models.
+ * one too when paid models are allowed.
  */
 export async function listModels(credentials?: Credentials): Promise<ModelInfo[]> {
-  if (credentials?.provider === "omniroute") {
-    const page = await client(credentials).models.list()
-    lastGatewayModels = page.data as unknown as GatewayModel[]
-    return (listed.omniroute = filterGatewayModels(lastGatewayModels, gatewayPreset(credentials.omnirouteUrl ?? "", credentials.gateway).routingModes))
-  }
   const res = await fetch("/api/openrouter/v1/models")
   if (!res.ok) throw new Error(`Model list failed: ${res.status}`)
   const body = (await res.json()) as { data: OpenRouterModel[] }
+  lastOpenRouterModels = body.data
   const models = filterOpenRouterModels(body.data, paidModels(credentials))
-  if (models.length) listed.openrouter = models
+  if (models.length) listed = models
   return models
 }
 
 /**
- * What the site has set on Netlify: an OpenRouter key, its own OmniRoute gateway, and a
- * passcode for paid models; and whether this device's pass (if any) is still good.
+ * What the site has set on Netlify: an OpenRouter key and a passcode for paid models; and
+ * whether this device's pass (if any) is still good.
  */
 export async function serverStatus(sitePass?: string) {
   try {
     const res = await fetch("/api/status", { headers: sitePass ? { "x-site-pass": sitePass } : {} })
     if (res.ok) {
-      const body = (await res.json()) as { serverKey?: boolean; omniroute?: boolean; passcode?: boolean; paidUnlocked?: boolean }
-      return { serverKey: !!body.serverKey, omniroute: !!body.omniroute, passcode: !!body.passcode, paidUnlocked: body.paidUnlocked === true, known: true }
+      const body = (await res.json()) as { serverKey?: boolean; passcode?: boolean; paidUnlocked?: boolean }
+      return { serverKey: !!body.serverKey, passcode: !!body.passcode, paidUnlocked: body.paidUnlocked === true, known: true }
     }
   } catch {
     // Offline: only keys entered in the app count.
   }
-  return { serverKey: false, omniroute: false, passcode: false, paidUnlocked: false, known: false }
+  return { serverKey: false, passcode: false, paidUnlocked: false, known: false }
 }
 
 /** Swaps the owner's passcode for this device's pass; throws with the server's reason. */
@@ -294,13 +211,9 @@ export function errorMessage(error: unknown) {
       const body = error.error as { error?: { message?: string }; message?: string } | undefined
       message = body?.error?.message ?? body?.message ?? error.message
     }
-    if (error.status === 401 && !/Settings/.test(message))
-      return lastGateway ? "The gateway didn't accept the API key. Check it in Settings → AI provider." : "OpenRouter didn't accept the key. Check it in Settings → OpenRouter key."
-    if (error instanceof OpenAI.APIConnectionError && lastGateway?.mode === "direct" && isIOS() && isThisDevice(lastGateway.base))
-      return `${lastGateway.base} means this iPhone itself, and OmniRoute can't run on an iPhone. Use the https address of your OmniRoute cloud server or your computer's Cloudflare tunnel instead (Omni → Set up).`
-    if (error instanceof OpenAI.APIConnectionError && lastGateway?.mode === "direct")
-      return `Couldn't reach OmniRoute at ${lastGateway.base}. Check it's running, and that it allows this site: start it with CORS_ALLOWED_ORIGINS=${location.origin}`
-    if (lastGateway) return message
+    if (error.status === 401 && !/Settings/.test(message)) return "OpenRouter didn't accept the key. Check it in Settings → OpenRouter key."
+    if (error.status === 402 || /insufficient credits|more credits/i.test(message))
+      return "That model needs credit on the OpenRouter account. Add some at openrouter.ai → Credits, or pick a free model."
     if (error.status === 429) return "Free-model limit reached for now. Wait a minute, or try another model. (Free models allow about 20 messages a minute and 50 a day.)"
   }
   // Some free models are only offered to accounts that allow providers to use prompts.
@@ -309,14 +222,6 @@ export function errorMessage(error: unknown) {
   return message
 }
 
-/** OmniRoute couldn't be reached at all (not running, wrong address, offline), as opposed to refusing the request. */
-export function isUnreachable(error: unknown) {
-  if (isAbort(error)) return false
-  if (error instanceof OpenAI.APIConnectionError) return true
-  const status = error instanceof OpenAI.APIError || error instanceof JobError ? error.status : undefined
-  if (status === 502 || status === 503 || status === 504) return true
-  return error instanceof JobError && status === undefined && /fetch failed|ECONNREFUSED|ENOTFOUND|getaddrinfo|timed? ?out|network/i.test(error.message)
-}
 
 export function isAbort(error: unknown) {
   return error instanceof OpenAI.APIUserAbortError || (error instanceof DOMException && error.name === "AbortError")

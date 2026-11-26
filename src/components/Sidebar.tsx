@@ -4,7 +4,7 @@ import { setView, type View, VIEWS, view } from "../lib/view"
 import { activeId, conversations, deleteConversation, isStreaming, newChat, renameConversation, setActiveId } from "../lib/store"
 import type { Conversation } from "../lib/types"
 import { unseenReports } from "../lib/agency"
-import { IconCompose, IconDownload, IconEdit, IconSettings, IconTrash, IconChat, IconCode, IconImage, IconPalette, IconPeople, IconWave, IconHub, IconBot } from "./icons"
+import { IconCompose, IconDownload, IconEdit, IconSettings, IconTrash, IconChat, IconCode, IconImage, IconPalette, IconPeople, IconWave, IconBot } from "./icons"
 
 const NAV_ICON: Record<View, () => JSX.Element> = {
   chat: IconChat,
@@ -14,7 +14,6 @@ const NAV_ICON: Record<View, () => JSX.Element> = {
   agents: IconBot,
   image: IconImage,
   audio: IconWave,
-  omni: IconHub,
 }
 
 const DAY = 86_400_000

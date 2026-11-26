@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js"
 
-export type View = "chat" | "code" | "design" | "cowork" | "agents" | "image" | "audio" | "omni"
+// A view saved before Omni was removed ("omni") isn't in the list, so the app opens on Chat.
+export type View = "chat" | "code" | "design" | "cowork" | "agents" | "image" | "audio"
 
 export const VIEWS: { id: View; label: string }[] = [
   { id: "chat", label: "Chat" },
@@ -10,7 +11,6 @@ export const VIEWS: { id: View; label: string }[] = [
   { id: "agents", label: "Agents" },
   { id: "image", label: "Photo" },
   { id: "audio", label: "Audio" },
-  { id: "omni", label: "Omni" },
 ]
 
 function initial(): View {
