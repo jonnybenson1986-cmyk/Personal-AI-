@@ -3,7 +3,7 @@ import { DEFAULT_MODELS, GATEWAY_AUTO, rememberWindows } from "./models"
 import { ROUTING_MODES } from "./omni"
 import { type Credentials, errorMessage, lastGatewayModels, listModels, serverStatus } from "./providers"
 import { gatewayPreset } from "./gateways"
-import { gatewayReady, setSiteGateway, setSiteOpenRouter } from "./route"
+import { gatewayReady, setSiteGateway, setSiteOpenRouter, setSitePasscode } from "./route"
 import { settings, updateSettings } from "./store"
 import type { ModelInfo } from "./types"
 
@@ -22,13 +22,20 @@ export async function refreshStatus(credentials: Credentials) {
     const server = await serverStatus()
     setSiteGateway(server.omniroute)
     setSiteOpenRouter(server.serverKey)
+    setSitePasscode(server.passcode)
     setCanChat(gatewayReady(credentials.omnirouteUrl ?? "", credentials.omnirouteKey ?? ""))
     await refreshCatalog(credentials)
     return
   }
-  const [server] = await Promise.all([serverStatus(), refreshCatalog(credentials)])
+  const [server] = await Promise.all([serverStatus(credentials.sitePass), refreshCatalog(credentials)])
   setSiteGateway(server.omniroute)
   setSiteOpenRouter(server.serverKey)
+  setSitePasscode(server.passcode)
+  if (credentials.sitePass && server.known && !server.paidUnlocked) {
+    // The passcode or key changed on Netlify (or the pass expired): back to free models.
+    updateSettings({ sitePass: undefined })
+    await refreshCatalog({ ...credentials, sitePass: undefined })
+  }
   if (!credentials.openrouterKey.trim() && !server.serverKey && server.omniroute) {
     // OpenRouter has no key anywhere but the site has OmniRoute set up: use that instead.
     updateSettings({ provider: "omniroute", models: [{ id: GATEWAY_AUTO }] })

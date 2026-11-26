@@ -11,6 +11,7 @@ import { inferenceFetch } from "./inference.ts"
 import { gatewayBase, siteGateway } from "./gateway.ts"
 import { freeFallback, isFreeModel, json, PLACEHOLDER_KEY } from "./proxy.ts"
 import { purgeLimits } from "./limit.ts"
+import { paidUnlocked } from "./passcode.ts"
 import { readTeam, type TeamMember, teamMessages } from "./team.ts"
 
 export interface JobStore {
@@ -50,6 +51,8 @@ export const OMNI_JOB_PATH = /^\/v1\/(videos\/generations|music\/generations|ima
 export interface JobSecrets {
   openrouterKey?: string
   omnirouteKey?: string
+  /** This device's pass for paid models on the site's key (passcode.ts). */
+  sitePass?: string
 }
 
 export interface JobRecord {
@@ -105,7 +108,7 @@ export function upstreamFor(input: JobInput, secrets: JobSecrets, env: (name: st
   if (!key) {
     key = env("OPENROUTER_API_KEY")
     if (!key) return { error: "Add your free OpenRouter key in Settings to start chatting.", code: 401 }
-    if (!isFreeModel(input.model)) return { error: "The site's key only works with free models.", code: 403 }
+    if (!isFreeModel(input.model) && !paidUnlocked(secrets.sitePass, env)) return { error: "The site's key only works with free models.", code: 403 }
   }
   return { url: `${openrouterOrigin}/v1/chat/completions`, key, extra: { ...freeFallback(input.model), ...(input.reasoning ? { reasoning: { effort: "high" } } : {}) } }
 }
@@ -156,7 +159,7 @@ export async function jobsApi(
     }
     const input = readInput(parsed.input)
     if (typeof input === "string") return json(400, { error: { message: input } })
-    const secrets: JobSecrets = { openrouterKey: parsed.secrets?.openrouterKey, omnirouteKey: parsed.secrets?.omnirouteKey }
+    const secrets: JobSecrets = { openrouterKey: parsed.secrets?.openrouterKey, omnirouteKey: parsed.secrets?.omnirouteKey, sitePass: parsed.secrets?.sitePass }
     // Problems that are known now are reported now, not as a failed job.
     const up = upstreamFor(input, secrets, deps.env)
     if ("error" in up) return json(up.code ?? 400, { error: { message: up.error } })

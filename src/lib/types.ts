@@ -90,6 +90,8 @@ export interface Settings {
   omnirouteKey: string
   /** Which kind of gateway that address is (Settings → AI); unset means OmniRoute. */
   gateway?: GatewayKind
+  /** This device's pass for paid models on the site's own key, from the owner's passcode. */
+  sitePass?: string
   /** The user's OpenRouter key. Stored on this device only. */
   openrouterKey: string
   /** Optional GitHub token for private repos. Stored on this device only. */

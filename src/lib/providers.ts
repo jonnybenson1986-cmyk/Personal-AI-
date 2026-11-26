@@ -20,6 +20,8 @@ export interface Credentials {
   omnirouteUrl?: string
   omnirouteKey?: string
   gateway?: GatewayKind
+  /** This device's pass for paid models on the site's key (Settings → passcode). */
+  sitePass?: string
   /** Run replies on the server when the caller can pick them up again (default on). */
   background?: boolean
 }
@@ -53,6 +55,7 @@ export function client(c: Credentials) {
   return new OpenAI({
     baseURL: `${location.origin}/api/openrouter/v1`,
     apiKey: c.openrouterKey.trim() || PLACEHOLDER_KEY,
+    defaultHeaders: !c.openrouterKey.trim() && c.sitePass ? { "x-site-pass": c.sitePass } : undefined,
     dangerouslyAllowBrowser: true,
     maxRetries: 1,
   })
@@ -117,7 +120,7 @@ function backgroundRoute(c: Credentials) {
 export function serverTarget(c: Credentials) {
   const where = backgroundRoute(c)
   if (!where) return undefined
-  const secrets = c.provider === "omniroute" ? { omnirouteKey: c.omnirouteKey?.trim() } : { openrouterKey: c.openrouterKey.trim() || undefined }
+  const secrets = c.provider === "omniroute" ? { omnirouteKey: c.omnirouteKey?.trim() } : { openrouterKey: c.openrouterKey.trim() || undefined, sitePass: c.sitePass || undefined }
   return { where, secrets }
 }
 
@@ -238,6 +241,9 @@ export let lastGatewayModels: GatewayModel[] = []
 /** Whether these are the user's own OpenRouter key, which can pay for any model. */
 export const ownOpenRouterKey = (c?: Credentials) => !!c?.openrouterKey?.trim().startsWith("sk-or-")
 
+/** Whether paid models can be used: the user's own key, or the site's key unlocked with the passcode. */
+export const paidModels = (c?: Credentials) => ownOpenRouterKey(c) || !!c?.sitePass
+
 /**
  * OpenRouter's chat models from its live list (needs no key): the free ones, and every other
  * one too with the user's own key. Or the gateway's models.
@@ -251,23 +257,34 @@ export async function listModels(credentials?: Credentials): Promise<ModelInfo[]
   const res = await fetch("/api/openrouter/v1/models")
   if (!res.ok) throw new Error(`Model list failed: ${res.status}`)
   const body = (await res.json()) as { data: OpenRouterModel[] }
-  const models = filterOpenRouterModels(body.data, ownOpenRouterKey(credentials))
+  const models = filterOpenRouterModels(body.data, paidModels(credentials))
   if (models.length) listed.openrouter = models
   return models
 }
 
-/** What the site has set on Netlify: an OpenRouter key, and its own OmniRoute gateway. */
-export async function serverStatus() {
+/**
+ * What the site has set on Netlify: an OpenRouter key, its own OmniRoute gateway, and a
+ * passcode for paid models; and whether this device's pass (if any) is still good.
+ */
+export async function serverStatus(sitePass?: string) {
   try {
-    const res = await fetch("/api/status")
+    const res = await fetch("/api/status", { headers: sitePass ? { "x-site-pass": sitePass } : {} })
     if (res.ok) {
-      const body = (await res.json()) as { serverKey?: boolean; omniroute?: boolean }
-      return { serverKey: !!body.serverKey, omniroute: !!body.omniroute }
+      const body = (await res.json()) as { serverKey?: boolean; omniroute?: boolean; passcode?: boolean; paidUnlocked?: boolean }
+      return { serverKey: !!body.serverKey, omniroute: !!body.omniroute, passcode: !!body.passcode, paidUnlocked: body.paidUnlocked === true, known: true }
     }
   } catch {
     // Offline: only keys entered in the app count.
   }
-  return { serverKey: false, omniroute: false }
+  return { serverKey: false, omniroute: false, passcode: false, paidUnlocked: false, known: false }
+}
+
+/** Swaps the owner's passcode for this device's pass; throws with the server's reason. */
+export async function unlockPaid(passcode: string) {
+  const res = await fetch("/api/unlock", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ passcode }) })
+  const body = (await res.json().catch(() => ({}))) as { pass?: string; error?: { message?: string } }
+  if (!res.ok || !body.pass) throw new Error(body.error?.message ?? `Couldn't unlock (${res.status}).`)
+  return body.pass
 }
 
 export function errorMessage(error: unknown) {

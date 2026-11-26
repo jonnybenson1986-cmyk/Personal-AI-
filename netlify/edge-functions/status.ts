@@ -1,9 +1,18 @@
 import type { Config } from "@netlify/edge-functions"
 import { siteGateway } from "../shared/gateway.ts"
+import { paidUnlocked, passcodeSet } from "../shared/passcode.ts"
 import { json } from "../shared/proxy.ts"
 
-// Tells the app whether the site has its own OpenRouter key and OmniRoute gateway. Only booleans.
-export default () =>
-  json(200, { serverKey: Boolean(Netlify.env.get("OPENROUTER_API_KEY")), omniroute: Boolean(siteGateway((name) => Netlify.env.get(name))) })
+// Tells the app whether the site has its own OpenRouter key and OmniRoute gateway, whether a
+// passcode for paid models is set, and whether this device's pass is still good. Only booleans.
+export default (req: Request) => {
+  const env = (name: string) => Netlify.env.get(name)
+  return json(200, {
+    serverKey: Boolean(env("OPENROUTER_API_KEY")),
+    omniroute: Boolean(siteGateway(env)),
+    passcode: passcodeSet(env),
+    paidUnlocked: paidUnlocked(req.headers.get("x-site-pass"), env),
+  })
+}
 
 export const config: Config = { path: "/api/status" }

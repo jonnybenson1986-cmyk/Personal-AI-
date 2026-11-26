@@ -2,7 +2,8 @@ import { createSignal, type JSX, Show } from "solid-js"
 import { canChat, catalog, gatewayError, refreshCatalog, refreshStatus } from "../lib/catalog"
 import { DEFAULT_SELECTION, GATEWAY_AUTO } from "../lib/models"
 import { GATEWAYS, gatewayKind, gatewayPreset, type GatewayKind } from "../lib/gateways"
-import { gatewayReady, gatewayRoute, isThisDevice, siteGateway } from "../lib/route"
+import { gatewayReady, gatewayRoute, isThisDevice, siteGateway, sitePasscode } from "../lib/route"
+import { unlockPaid } from "../lib/providers"
 import { isIOS } from "../lib/install"
 import { clearAll, settings, updateSettings } from "../lib/store"
 import type { Provider, Settings } from "../lib/types"
@@ -95,6 +96,74 @@ export function CheaperInferenceSetup() {
     <Show when={result()}><p class="notice small-text" role="status">{result()}</p></Show>
     <p class="small-text muted">Chat, Code, Design and Cowork share this connection. Photo, Audio and Video require models and endpoints supported by your account. Search, page reading, OCR, music and OmniRoute usage require an OmniRoute server.</p>
   </section>
+}
+
+/** The owner's passcode: unlocks paid models on the site's own key, on this device. */
+function PaidUnlock() {
+  const [code, setCode] = createSignal("")
+  const [busy, setBusy] = createSignal(false)
+  const [error, setError] = createSignal<string>()
+  async function unlock() {
+    setBusy(true)
+    setError(undefined)
+    try {
+      updateSettings({ sitePass: await unlockPaid(code().trim()) })
+      setCode("")
+      await refreshStatus(settings)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div class="field">
+      <span>Paid models</span>
+      <Show
+        when={settings.sitePass}
+        fallback={
+          <>
+            <small>Enter the site's passcode once on this device to use every model (GPT, Claude, Gemini…), billed to the site's OpenRouter account.</small>
+            <form
+              class="inline"
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (code().trim()) void unlock()
+              }}
+            >
+              <input
+                class="text-input"
+                type="password"
+                inputmode="numeric"
+                autocomplete="off"
+                placeholder="Passcode"
+                aria-label="Passcode"
+                value={code()}
+                onInput={(e) => setCode(e.currentTarget.value)}
+              />
+              <button class="button" type="submit" disabled={busy() || !code().trim()}>
+                {busy() ? "Checking…" : "Unlock"}
+              </button>
+            </form>
+            <Show when={error()}>{(e) => <p class="small-text error-text">{e()}</p>}</Show>
+          </>
+        }
+      >
+        <small>Unlocked on this device: every model is in the model picker.</small>
+        <div class="inline">
+          <button
+            class="button ghost"
+            onClick={() => {
+              updateSettings({ sitePass: undefined })
+              void refreshStatus(settings)
+            }}
+          >
+            Lock this device
+          </button>
+        </div>
+      </Show>
+    </div>
+  )
 }
 
 function OmniRouteFields(props: { onSave: (patch: Partial<Settings>) => void }) {
@@ -228,6 +297,9 @@ export function SettingsDialog(props: { onClose: () => void }) {
             <p class="small-text key-status">
               Status: <strong>{canChat() ? "ready" : "add a key to start"}</strong>
             </p>
+            <Show when={sitePasscode() && !settings.openrouterKey.trim()}>
+              <PaidUnlock />
+            </Show>
           </>
         }
       >

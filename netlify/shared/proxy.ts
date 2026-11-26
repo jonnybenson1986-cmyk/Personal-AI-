@@ -74,7 +74,8 @@ function userKey(req: Request) {
   return key && key !== PLACEHOLDER_KEY && key.startsWith("sk-or-") ? key : undefined
 }
 
-export async function proxy(req: Request, upstream: Upstream, env: (name: string) => string | undefined) {
+/** `unlocked`: the owner's passcode was entered on this device (passcode.ts), so the site's key may pay for any model. */
+export async function proxy(req: Request, upstream: Upstream, env: (name: string) => string | undefined, unlocked = false) {
   const url = new URL(req.url)
   const path = url.pathname.slice(upstream.prefix.length)
   const rules = upstream.allow[req.method] ?? []
@@ -89,7 +90,7 @@ export async function proxy(req: Request, upstream: Upstream, env: (name: string
   if (!key && !upstream.open.some((rule) => rule.test(path))) {
     key = env(upstream.keyEnv)
     if (!key) return json(401, { error: { message: "Add your free OpenRouter key in Settings to start chatting." } })
-    const refused = body && paidFeature(body)
+    const refused = !unlocked && body && paidFeature(body)
     if (refused) return json(refused.status, { error: { message: refused.message } })
   }
 

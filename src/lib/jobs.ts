@@ -24,7 +24,7 @@ export interface JobStart {
     request?: { path: string; body: unknown }
     team?: { task: string; members: TeamMember[] }
   }
-  secrets: { openrouterKey?: string; omnirouteKey?: string }
+  secrets: { openrouterKey?: string; omnirouteKey?: string; sitePass?: string }
 }
 
 /** Where jobs are started: its own address, so the site can rate-limit starts per visitor. */
